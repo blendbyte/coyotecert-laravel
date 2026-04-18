@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-787cb5?style=flat-square)](https://www.php.net)
-[![Laravel](https://img.shields.io/badge/Laravel-10%2B-FF2D20?style=flat-square)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-11%2B-FF2D20?style=flat-square)](https://laravel.com)
 
 **First-party Laravel integration for [CoyoteCert](https://github.com/blendbyte/coyotecert).** The PHP ACME v2 client for issuing, renewing, and revoking TLS certificates with Let's Encrypt, ZeroSSL, Google Trust Services, and any RFC 8555-compliant CA.
 
@@ -51,7 +51,7 @@ Delivers the `DatabaseStorage` schema as a standard Laravel migration.
 ## Requirements
 
 - PHP ^8.3
-- Laravel ^10.0 or ^11.0
+- Laravel ^11.0, ^12.0, or ^13.0
 - [blendbyte/coyotecert](https://github.com/blendbyte/coyotecert)
 
 ---

@@ -15,13 +15,13 @@
   "require": {
     "php": "^8.3",
     "blendbyte/coyotecert": "^0.1",
-    "illuminate/contracts": "^10.0 || ^11.0",
-    "illuminate/support": "^10.0 || ^11.0"
+    "illuminate/contracts": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/support": "^11.0 || ^12.0 || ^13.0"
   },
   "require-dev": {
     "friendsofphp/php-cs-fixer": "^3.95",
     "larastan/larastan": "^3.0",
-    "orchestra/testbench": "^9.0",
+    "orchestra/testbench": "^9.0 || ^10.0 || ^11.0",
     "pestphp/pest": "^4.0",
     "pestphp/pest-plugin-laravel": "^4.0",
     "phpunit/phpunit": "^12.5"
