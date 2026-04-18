@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "57899c77436e9362369df9f373a64099",
+    "content-hash": "61adb1c417db015224bf315bc237c33b",
     "packages": [
         {
             "name": "blendbyte/coyotecert",
