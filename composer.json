@@ -1,0 +1,59 @@
+{
+  "name": "blendbyte/coyotecert-laravel",
+  "description": "First-party Laravel integration for CoyoteCert. HTTP-01 challenge via cache, Artisan commands, events, queue jobs, and scheduled renewal.",
+  "keywords": ["acme", "letsencrypt", "ssl", "tls", "certificate", "laravel"],
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Blendbyte",
+      "email": "hello@blendbyte.com",
+      "homepage": "https://www.blendbyte.com",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": "^8.3",
+    "blendbyte/coyotecert": "^0.1",
+    "illuminate/contracts": "^10.0 || ^11.0",
+    "illuminate/support": "^10.0 || ^11.0"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.95",
+    "larastan/larastan": "^3.0",
+    "orchestra/testbench": "^9.0",
+    "pestphp/pest": "^4.0",
+    "pestphp/pest-plugin-laravel": "^4.0",
+    "phpunit/phpunit": "^12.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "CoyoteCert\\Laravel\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "CoyoteCert\\Laravel\\CoyoteCertServiceProvider"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/pest",
+    "test:coverage": "vendor/bin/pest --coverage",
+    "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
+    "lint": "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix",
+    "lint:check": "PHP_CS_FIXER_IGNORE_ENV=1 vendor/bin/php-cs-fixer fix --dry-run --diff"
+  },
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  }
+}
