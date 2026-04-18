@@ -1,0 +1,127 @@
+<?php
+
+declare(strict_types=1);
+
+namespace CoyoteCert\Laravel;
+
+use CoyoteCert\CoyoteCert;
+use CoyoteCert\Enums\KeyType;
+use CoyoteCert\Interfaces\ChallengeHandlerInterface;
+use CoyoteCert\Laravel\Challenge\CacheHttp01Handler;
+use CoyoteCert\Laravel\Events\CertificateIssued;
+use CoyoteCert\Laravel\Events\CertificateRenewed;
+use CoyoteCert\Provider\AcmeProviderInterface;
+use CoyoteCert\Provider\BuypassGo;
+use CoyoteCert\Provider\BuypassGoStaging;
+use CoyoteCert\Provider\CustomProvider;
+use CoyoteCert\Provider\GoogleTrustServices;
+use CoyoteCert\Provider\LetsEncrypt;
+use CoyoteCert\Provider\LetsEncryptStaging;
+use CoyoteCert\Provider\ZeroSSL;
+use CoyoteCert\Storage\DatabaseStorage;
+use CoyoteCert\Storage\FilesystemStorage;
+use CoyoteCert\Storage\StorageInterface;
+use CoyoteCert\Storage\StoredCertificate;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\DatabaseManager;
+use InvalidArgumentException;
+use Psr\Log\LoggerInterface;
+
+final class CoyoteCertManager
+{
+    public function __construct(
+        private readonly ConfigRepository $config,
+        private readonly CacheRepository $cache,
+        private readonly Dispatcher $events,
+        private readonly DatabaseManager $db,
+        private readonly LoggerInterface $logger,
+    ) {}
+
+    /** @param string|array<int, string> $domains */
+    public function for(string|array $domains): CoyoteCert
+    {
+        $email   = (string) $this->config->get('coyotecert.email', '');
+        $keyType = KeyType::from((string) $this->config->get('coyotecert.key_type', 'EC_P256'));
+
+        return CoyoteCert::with($this->resolveProvider())
+            ->email($email)
+            ->storage($this->storage())
+            ->logger($this->logger)
+            ->identifiers($domains)
+            ->challenge($this->resolveChallenge())
+            ->keyType($keyType)
+            ->onIssued(function (StoredCertificate $certificate) use ($domains): void {
+                $domain = is_array($domains) ? $domains[0] : $domains;
+                $this->events->dispatch(new CertificateIssued($certificate, $domain));
+            })
+            ->onRenewed(function (StoredCertificate $certificate) use ($domains): void {
+                $domain = is_array($domains) ? $domains[0] : $domains;
+                $this->events->dispatch(new CertificateRenewed($certificate, $domain));
+            });
+    }
+
+    public function storage(): StorageInterface
+    {
+        $type = (string) $this->config->get('coyotecert.storage', 'database');
+
+        return match ($type) {
+            'filesystem' => new FilesystemStorage(
+                (string) ($this->config->get('coyotecert.filesystem.path') ?? storage_path('coyotecert')),
+            ),
+            'database' => $this->databaseStorage(),
+            default    => throw new InvalidArgumentException(
+                "Unknown storage driver [{$type}]. Supported: filesystem, database.",
+            ),
+        };
+    }
+
+    private function resolveProvider(): AcmeProviderInterface
+    {
+        $provider = (string) $this->config->get('coyotecert.provider', 'letsencrypt');
+
+        return match ($provider) {
+            'letsencrypt'         => new LetsEncrypt(),
+            'letsencrypt-staging' => new LetsEncryptStaging(),
+            'buypass'             => new BuypassGo(),
+            'buypass-staging'     => new BuypassGoStaging(),
+            'zerossl'             => new ZeroSSL(
+                (string) $this->config->get('coyotecert.providers.zerossl.api_key', ''),
+            ),
+            'google' => new GoogleTrustServices(
+                (string) $this->config->get('coyotecert.providers.google.eab_kid', ''),
+                (string) $this->config->get('coyotecert.providers.google.eab_hmac', ''),
+            ),
+            'custom' => new CustomProvider(
+                (string) $this->config->get('coyotecert.providers.custom.directory_url', ''),
+            ),
+            default => throw new InvalidArgumentException(
+                "Unknown provider [{$provider}]. Supported: letsencrypt, letsencrypt-staging, buypass, buypass-staging, zerossl, google, custom.",
+            ),
+        };
+    }
+
+    private function resolveChallenge(): ChallengeHandlerInterface
+    {
+        $challenge = (string) $this->config->get('coyotecert.challenge', 'http-01');
+
+        return match ($challenge) {
+            'http-01' => new CacheHttp01Handler($this->cache),
+            'dns-01'  => throw new InvalidArgumentException(
+                'DNS-01 challenge requires a custom handler. Bind a ChallengeHandlerInterface implementation in your service container.',
+            ),
+            default => throw new InvalidArgumentException(
+                "Unknown challenge type [{$challenge}]. For dns-01, bind a custom ChallengeHandlerInterface.",
+            ),
+        };
+    }
+
+    private function databaseStorage(): DatabaseStorage
+    {
+        $conn  = (string) ($this->config->get('coyotecert.database.connection') ?? $this->config->get('database.default', 'mysql'));
+        $table = (string) $this->config->get('coyotecert.database.table', 'coyote_cert_storage');
+
+        return new DatabaseStorage($this->db->connection($conn)->getPdo(), $table);
+    }
+}
