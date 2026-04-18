@@ -19,6 +19,7 @@
     "illuminate/support": "^12.0 || ^13.0"
   },
   "require-dev": {
+    "dg/bypass-finals": "^1.8",
     "friendsofphp/php-cs-fixer": "^3.95",
     "larastan/larastan": "^3.0",
     "orchestra/testbench": "^10.0 || ^11.0",
