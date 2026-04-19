@@ -14,7 +14,7 @@
   ],
   "require": {
     "php": "^8.3",
-    "blendbyte/coyotecert": "^0.1",
+    "blendbyte/coyotecert": "^1.0",
     "illuminate/contracts": "^12.0 || ^13.0",
     "illuminate/support": "^12.0 || ^13.0"
   },
