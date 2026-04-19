@@ -17,8 +17,18 @@ final class RevokeCertCommand extends Command
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $domain  = (string) $this->input->getArgument('domain');
-        $reason  = RevocationReason::from((int) $this->input->getOption('reason'));
+        $domain       = (string) $this->input->getArgument('domain');
+        $reasonInt    = (int) $this->input->getOption('reason');
+        $validReasons = array_column(RevocationReason::cases(), 'value');
+
+        if (!in_array($reasonInt, $validReasons, true)) {
+            $this->error("Invalid reason code [{$reasonInt}].");
+            $this->line('Valid codes: ' . implode(', ', $validReasons) . '.');
+
+            return Command::FAILURE;
+        }
+
+        $reason  = RevocationReason::from($reasonInt);
         $keyType = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
 
         $storage = $manager->storage();

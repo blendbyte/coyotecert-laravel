@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CoyoteCert\Laravel;
 
 use CoyoteCert\Laravel\Commands\IssueCertCommand;
+use CoyoteCert\Laravel\Commands\ListCertCommand;
 use CoyoteCert\Laravel\Commands\RenewCertCommand;
 use CoyoteCert\Laravel\Commands\RevokeCertCommand;
 use CoyoteCert\Laravel\Commands\StatusCertCommand;
@@ -50,6 +51,7 @@ final class CoyoteCertServiceProvider extends ServiceProvider
                 RenewCertCommand::class,
                 StatusCertCommand::class,
                 RevokeCertCommand::class,
+                ListCertCommand::class,
             ]);
         }
 

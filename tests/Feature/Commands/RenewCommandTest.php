@@ -187,6 +187,38 @@ it('dispatches CertificateExpiring when the cert is within the renewal window', 
     );
 });
 
+it('skips a domain whose certificate is not within the renewal window', function (): void {
+    config(['coyotecert.domains' => ['example.com'], 'coyotecert.renewal_days' => 30]);
+
+    $freshCert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+60 days'),
+        domains: ['example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn($freshCert);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('storage')->andReturn($storage);
+    $manager->shouldNotReceive('for');
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:renew')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Skipped: example.com');
+});
+
 it('warns and returns success when no domains are configured', function (): void {
     config(['coyotecert.domains' => []]);
 

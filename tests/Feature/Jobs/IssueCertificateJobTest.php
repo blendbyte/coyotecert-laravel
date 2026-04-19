@@ -2,18 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Tests\Feature\Commands;
+namespace Tests\Feature\Jobs;
 
 use CoyoteCert\CoyoteCert;
 use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
+use CoyoteCert\Laravel\Jobs\IssueCertificateJob;
 use CoyoteCert\Storage\StoredCertificate;
 use DateTimeImmutable;
-use Illuminate\Console\Command;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Mockery;
 use Mockery\MockInterface;
 
-it('issues a certificate and reports success', function (): void {
+it('calls issueOrRenew with the default renewal window', function (): void {
     $cert = new StoredCertificate(
         certificate: '---cert---',
         privateKey: '---key---',
@@ -27,31 +28,40 @@ it('issues a certificate and reports success', function (): void {
 
     /** @var MockInterface&CoyoteCert $coyoteCert */
     $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issue')->once()->andReturn($cert);
+    $coyoteCert->shouldReceive('issueOrRenew')->once()->with(30)->andReturn($cert);
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
     $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
 
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    $this->artisan('cert:issue', ['domain' => 'example.com'])
-        ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('Certificate issued successfully.');
+    $job = new IssueCertificateJob('example.com');
+    $job->handle($manager);
 });
 
-it('returns failure and shows an error when issuance throws', function (): void {
+it('passes a custom renewal window to issueOrRenew', function (): void {
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
     /** @var MockInterface&CoyoteCert $coyoteCert */
     $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issue')->once()->andThrow(new \RuntimeException('ACME error'));
+    $coyoteCert->shouldReceive('issueOrRenew')->once()->with(14)->andReturn($cert);
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
     $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
 
-    $this->instance(CoyoteCertManager::class, $manager);
+    $job = new IssueCertificateJob('example.com', renewalDays: 14);
+    $job->handle($manager);
+});
 
-    $this->artisan('cert:issue', ['domain' => 'example.com'])
-        ->assertExitCode(Command::FAILURE)
-        ->expectsOutputToContain('Failed to issue certificate for [example.com]: ACME error');
+it('implements ShouldQueue', function (): void {
+    expect(new IssueCertificateJob('example.com'))->toBeInstanceOf(ShouldQueue::class);
 });

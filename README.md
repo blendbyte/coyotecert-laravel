@@ -207,6 +207,23 @@ php artisan cert:renew --domain=example.com --force
 
 If a domain fails, the command reports the error, continues to the next domain, and exits with a non-zero status code at the end. Your monitoring picks that up.
 
+### cert:list
+
+Show the status of every domain in `coyotecert.domains` at a glance.
+
+```bash
+php artisan cert:list
+```
+
+```
++------------------+---------------------+---------------------+----------------+---------+
+| Domain           | Issued At           | Expires At          | Days Remaining | Expired |
++------------------+---------------------+---------------------+----------------+---------+
+| example.com      | 2025-04-19 14:22:05 | 2025-07-18 14:22:05 | 89             | No      |
+| www.example.com  | Not issued          | Not issued          | -              | -       |
++------------------+---------------------+---------------------+----------------+---------+
+```
+
 ### cert:status
 
 Check the current certificate for a domain without hitting the CA at all.

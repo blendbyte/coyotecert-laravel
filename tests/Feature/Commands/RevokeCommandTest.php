@@ -70,3 +70,10 @@ it('returns failure and prints an error when no certificate is found', function 
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('No certificate found for [unknown.example.com]');
 });
+
+it('returns failure and shows valid codes when an invalid reason is given', function (): void {
+    $this->artisan('cert:revoke', ['domain' => 'example.com', '--reason' => '99'])
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('Invalid reason code [99]')
+        ->expectsOutputToContain('Valid codes:');
+});

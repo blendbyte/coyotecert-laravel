@@ -41,8 +41,13 @@ final class RenewCertCommand extends Command
                 if (!$force) {
                     $existing = $manager->storage()->getCertificate($domain, $keyType);
 
-                    if ($existing !== null && $existing->expiresWithin($renewalDays)) {
-                        event(new CertificateExpiring($existing, $domain, $existing->daysUntilExpiry()));
+                    if ($existing !== null) {
+                        if ($existing->expiresWithin($renewalDays)) {
+                            event(new CertificateExpiring($existing, $domain, $existing->daysUntilExpiry()));
+                        } else {
+                            $this->line("Skipped: {$domain} ({$existing->daysUntilExpiry()} days remaining)");
+                            continue;
+                        }
                     }
                 }
 

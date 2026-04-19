@@ -6,6 +6,7 @@ namespace CoyoteCert\Laravel\Commands;
 
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
+use Throwable;
 
 final class IssueCertCommand extends Command
 {
@@ -17,7 +18,13 @@ final class IssueCertCommand extends Command
     {
         $domain = (string) $this->input->getArgument('domain');
 
-        $cert = $manager->for($domain)->issue();
+        try {
+            $cert = $manager->for($domain)->issue();
+        } catch (Throwable $e) {
+            $this->error("Failed to issue certificate for [{$domain}]: " . $e->getMessage());
+
+            return Command::FAILURE;
+        }
 
         $this->info('Certificate issued successfully.');
         $this->line('Expires: ' . $cert->expiresAt->format('Y-m-d H:i:s'));
