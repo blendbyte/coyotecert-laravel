@@ -8,6 +8,7 @@ use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Enums\RevocationReason;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
+use Throwable;
 
 final class RevokeCertCommand extends Command
 {
@@ -40,8 +41,14 @@ final class RevokeCertCommand extends Command
             return Command::FAILURE;
         }
 
-        $manager->for($identity)->revoke($cert, $reason);
-        $storage->deleteCertificate($identity, $keyType);
+        try {
+            $manager->for($identity)->revoke($cert, $reason);
+            $storage->deleteCertificate($identity, $keyType);
+        } catch (Throwable $e) {
+            $this->error("Failed to revoke certificate for [{$identity}]: " . $e->getMessage());
+
+            return Command::FAILURE;
+        }
 
         $this->info("Certificate for [{$identity}] has been revoked and deleted.");
 
