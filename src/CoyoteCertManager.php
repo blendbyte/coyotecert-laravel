@@ -18,6 +18,7 @@ use CoyoteCert\Provider\GoogleTrustServices;
 use CoyoteCert\Provider\LetsEncrypt;
 use CoyoteCert\Provider\LetsEncryptStaging;
 use CoyoteCert\Provider\ZeroSSL;
+use CoyoteCert\Laravel\Storage\ReconnectingPdo;
 use CoyoteCert\Storage\DatabaseStorage;
 use CoyoteCert\Storage\FilesystemStorage;
 use CoyoteCert\Storage\StorageInterface;
@@ -127,7 +128,11 @@ final class CoyoteCertManager
     {
         $conn  = (string) ($this->config->get('coyotecert.database.connection') ?? $this->config->get('database.default', 'mysql'));
         $table = (string) $this->config->get('coyotecert.database.table', 'coyote_cert_storage');
+        $db    = $this->db;
 
-        return new DatabaseStorage($this->db->connection($conn)->getPdo(), $table);
+        return new DatabaseStorage(
+            new ReconnectingPdo(fn (): \PDO => $db->connection($conn)->getPdo()),
+            $table,
+        );
     }
 }
