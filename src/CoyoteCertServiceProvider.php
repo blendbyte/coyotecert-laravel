@@ -53,11 +53,13 @@ final class CoyoteCertServiceProvider extends ServiceProvider
                 RevokeCertCommand::class,
                 ListCertCommand::class,
             ]);
-        }
 
-        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            $schedule->command('cert:renew')->daily();
-        });
+            if ((bool) $this->app->make(ConfigRepository::class)->get('coyotecert.schedule', true)) {
+                $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+                    $schedule->command('cert:renew')->daily();
+                });
+            }
+        }
 
         $this->registerChallengeRoute();
     }
