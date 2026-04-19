@@ -79,7 +79,13 @@ final class CoyoteCertManager
 
     private function resolveProvider(): AcmeProviderInterface
     {
-        $provider = (string) $this->config->get('coyotecert.provider', 'letsencrypt');
+        $provider = (string) $this->config->get('coyotecert.provider', '');
+
+        if ($provider === '') {
+            throw new InvalidArgumentException(
+                'No ACME provider configured. Set COYOTECERT_PROVIDER in your .env (letsencrypt, letsencrypt-staging, buypass, buypass-staging, zerossl, google, custom).',
+            );
+        }
 
         return match ($provider) {
             'letsencrypt'         => new LetsEncrypt(),

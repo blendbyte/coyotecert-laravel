@@ -80,10 +80,10 @@ Open `config/coyotecert.php`. Everything has a sensible default but you need to 
 
 ```php
 return [
-    // Which CA to use.
+    // Which CA to use. Required — no default, pick one consciously.
     // letsencrypt | letsencrypt-staging | buypass | buypass-staging
     // zerossl | google | custom
-    'provider' => env('COYOTECERT_PROVIDER', 'letsencrypt'),
+    'provider' => env('COYOTECERT_PROVIDER'),
 
     // Your contact email. The CA uses this to warn you about expiring
     // certificates and account issues. Required.
@@ -140,6 +140,7 @@ return [
 Minimal `.env` to get started with Let's Encrypt:
 
 ```env
+COYOTECERT_PROVIDER=letsencrypt
 COYOTECERT_EMAIL=ops@example.com
 COYOTECERT_STORAGE=database
 ```

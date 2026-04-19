@@ -16,7 +16,7 @@ it('binds CoyoteCertManager as a singleton in the container', function (): void 
 
 it('merges the coyotecert config into the application config', function (): void {
     expect(config('coyotecert'))->toBeArray();
-    expect(config('coyotecert.provider'))->not->toBeNull();
+    expect(config('coyotecert'))->toHaveKey('provider');
     expect(config('coyotecert.challenge'))->not->toBeNull();
     expect(config('coyotecert.storage'))->not->toBeNull();
     expect(config('coyotecert.key_type'))->not->toBeNull();

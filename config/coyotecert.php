@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'provider' => env('COYOTECERT_PROVIDER', 'letsencrypt'),
+    'provider' => env('COYOTECERT_PROVIDER'),
     'email' => env('COYOTECERT_EMAIL'),
     'challenge' => env('COYOTECERT_CHALLENGE', 'http-01'),
     'storage' => env('COYOTECERT_STORAGE', 'database'),
