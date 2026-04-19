@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
-use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Enums\RevocationReason;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
@@ -30,7 +29,7 @@ final class RevokeCertCommand extends Command
         }
 
         $reason  = RevocationReason::from($reasonInt);
-        $keyType = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
+        $keyType = $manager->resolveKeyType();
 
         $storage = $manager->storage();
         $cert    = $storage->getCertificate($identity, $keyType);

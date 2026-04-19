@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
-use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
 
@@ -17,7 +16,7 @@ final class StatusCertCommand extends Command
     public function handle(CoyoteCertManager $manager): int
     {
         $identity = (string) $this->input->getArgument('identity');
-        $keyType  = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
+        $keyType  = $manager->resolveKeyType();
 
         $cert = $manager->storage()->getCertificate($identity, $keyType);
 

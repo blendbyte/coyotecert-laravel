@@ -35,6 +35,7 @@ it('lists an identity with an active certificate', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
     $this->instance(CoyoteCertManager::class, $manager);
@@ -55,6 +56,7 @@ it('lists an identity that has no certificate yet', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
     $this->instance(CoyoteCertManager::class, $manager);
@@ -86,6 +88,7 @@ it('shows expired status for an expired certificate', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
     $this->instance(CoyoteCertManager::class, $manager);

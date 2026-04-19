@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
-use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
 
@@ -16,7 +15,7 @@ final class ListCertCommand extends Command
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $keyType = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
+        $keyType = $manager->resolveKeyType();
 
         /** @var list<string> $identities */
         $identities = array_values(array_map('strval', (array) config('coyotecert.identities', [])));

@@ -40,6 +40,7 @@ it('renews all configured identities and reports success', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldReceive('for')->andReturn($coyoteCert);
 
@@ -75,6 +76,7 @@ it('renews a single identity when --identity is given', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
 
@@ -104,6 +106,7 @@ it('calls issue() instead of issueOrRenew() when --force is given', function ():
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
 
     $this->instance(CoyoteCertManager::class, $manager);
@@ -125,6 +128,7 @@ it('returns failure when an identity renewal throws', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldReceive('for')->andReturn($coyoteCert);
 
@@ -172,6 +176,7 @@ it('dispatches CertificateExpiring when the cert is within the renewal window', 
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldReceive('for')->andReturn($coyoteCert);
 
@@ -209,6 +214,7 @@ it('skips an identity whose certificate is not within the renewal window', funct
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldNotReceive('for');
 

@@ -33,6 +33,7 @@ it('shows the certificate status table for a known domain', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
     $this->instance(CoyoteCertManager::class, $manager);
@@ -49,6 +50,7 @@ it('returns failure and prints an error when no certificate is found', function 
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
     $this->instance(CoyoteCertManager::class, $manager);

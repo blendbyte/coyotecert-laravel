@@ -44,7 +44,7 @@ final class CoyoteCertManager
     public function for(string|array $identities): CoyoteCert
     {
         $email   = (string) $this->config->get('coyotecert.email', '');
-        $keyType = KeyType::from((string) $this->config->get('coyotecert.key_type', 'EC_P256'));
+        $keyType = $this->resolveKeyType();
 
         return CoyoteCert::with($this->resolveProvider())
             ->email($email)
@@ -76,6 +76,21 @@ final class CoyoteCertManager
                 "Unknown storage driver [{$type}]. Supported: filesystem, database.",
             ),
         };
+    }
+
+    public function resolveKeyType(): KeyType
+    {
+        $value   = (string) $this->config->get('coyotecert.key_type', 'EC_P256');
+        $keyType = KeyType::tryFrom($value);
+
+        if ($keyType === null) {
+            $valid = implode(', ', array_column(KeyType::cases(), 'value'));
+            throw new InvalidArgumentException(
+                "Invalid key type [{$value}]. Set COYOTECERT_KEY_TYPE to one of: {$valid}.",
+            );
+        }
+
+        return $keyType;
     }
 
     private function requireConfig(string $key, string $envVar): string

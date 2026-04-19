@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
-use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Laravel\Events\CertificateExpiring;
 use Illuminate\Console\Command;
@@ -21,7 +20,7 @@ final class RenewCertCommand extends Command
         $identityOption = $this->input->getOption('identity');
         $force          = (bool) $this->input->getOption('force');
         $renewalDays    = (int) config('coyotecert.renewal_days', 30);
-        $keyType        = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
+        $keyType        = $manager->resolveKeyType();
 
         /** @var list<string> $identities */
         $identities = $identityOption !== null
