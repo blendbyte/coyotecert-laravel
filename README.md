@@ -5,10 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-787cb5?style=flat-square)](https://www.php.net)
 [![Laravel](https://img.shields.io/badge/Laravel-12%2B-FF2D20?style=flat-square)](https://laravel.com)
+[![Tests](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml)
+[![Static Analysis](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml)
+[![Coding Standards](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/coding-standards.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/coding-standards.yml)
+[![Latest Version](https://img.shields.io/packagist/v/blendbyte/coyotecert-laravel?style=flat-square)](https://packagist.org/packages/blendbyte/coyotecert-laravel)
+[![Total Downloads](https://img.shields.io/packagist/dt/blendbyte/coyotecert-laravel?style=flat-square)](https://packagist.org/packages/blendbyte/coyotecert-laravel)
 
 Free TLS certificates, straight from the ACME catalog. No nginx reloads, no cron entries, no shell scripts, no separate container. Just a service provider, a config file, and a couple of Artisan commands.
-
-> **This package is under active development and not yet released.**
 
 ---
 
@@ -445,12 +448,6 @@ $this->app->bind(ChallengeHandlerInterface::class, CloudflareDnsHandler::class);
 ```
 
 Then set `COYOTECERT_CHALLENGE=dns-01` in your `.env`. The manager resolves the binding automatically.
-
----
-
-## License
-
-MIT
 
 ---
 
