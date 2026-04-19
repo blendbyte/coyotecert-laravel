@@ -80,17 +80,40 @@ it('storage() throws for an unknown driver', function (): void {
     expect(fn() => $manager->storage())->toThrow(InvalidArgumentException::class);
 });
 
-it('for() returns a CoyoteCert instance', function (): void {
+it('for() returns a CoyoteCert instance', function (string $provider, array $extra): void {
     [$manager] = buildManager([
         'coyotecert.email'           => 'test@example.com',
         'coyotecert.key_type'        => 'EC_P256',
-        'coyotecert.provider'        => 'letsencrypt',
+        'coyotecert.provider'        => $provider,
+        'coyotecert.storage'         => 'filesystem',
+        'coyotecert.filesystem.path' => '/tmp/certs',
+        'coyotecert.challenge'       => 'http-01',
+        ...$extra,
+    ]);
+
+    expect($manager->for('example.com'))->toBeInstanceOf(CoyoteCert::class);
+})->with([
+    'letsencrypt'         => ['letsencrypt', []],
+    'letsencrypt-staging' => ['letsencrypt-staging', []],
+    'buypass'             => ['buypass', []],
+    'buypass-staging'     => ['buypass-staging', []],
+    'zerossl'             => ['zerossl', ['coyotecert.providers.zerossl.api_key' => 'test-key']],
+    'google'              => ['google', ['coyotecert.providers.google.eab_kid' => 'kid', 'coyotecert.providers.google.eab_hmac' => 'hmac']],
+    'custom'              => ['custom', ['coyotecert.providers.custom.directory_url' => 'https://acme.example.com/directory']],
+]);
+
+it('for() throws when no provider is configured', function (): void {
+    [$manager] = buildManager([
+        'coyotecert.email'           => 'test@example.com',
+        'coyotecert.key_type'        => 'EC_P256',
+        'coyotecert.provider'        => '',
         'coyotecert.storage'         => 'filesystem',
         'coyotecert.filesystem.path' => '/tmp/certs',
         'coyotecert.challenge'       => 'http-01',
     ]);
 
-    expect($manager->for('example.com'))->toBeInstanceOf(CoyoteCert::class);
+    expect(fn() => $manager->for('example.com'))
+        ->toThrow(InvalidArgumentException::class, 'No ACME provider configured');
 });
 
 it('for() throws for an unknown provider', function (): void {
