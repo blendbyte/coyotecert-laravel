@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel;
 
+use CoyoteCert\Laravel\Challenge\CacheHttp01Handler;
 use CoyoteCert\Laravel\Commands\IssueCertCommand;
 use CoyoteCert\Laravel\Commands\ListCertCommand;
 use CoyoteCert\Laravel\Commands\RenewCertCommand;
@@ -23,6 +24,10 @@ final class CoyoteCertServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/coyotecert.php', 'coyotecert');
+
+        $this->app->singleton(CacheHttp01Handler::class, function ($app): CacheHttp01Handler {
+            return new CacheHttp01Handler($app->make(CacheRepository::class));
+        });
 
         $this->app->singleton(CoyoteCertManager::class, function ($app): CoyoteCertManager {
             return new CoyoteCertManager(
@@ -70,9 +75,9 @@ final class CoyoteCertServiceProvider extends ServiceProvider
         $router = $this->app->make(Router::class);
 
         $router->get('/.well-known/acme-challenge/{token}', function (string $token): \Illuminate\Http\Response {
-            /** @var CacheRepository $cache */
-            $cache   = $this->app->make(CacheRepository::class);
-            $content = $cache->get('acme-challenge:' . $token);
+            /** @var CacheHttp01Handler $handler */
+            $handler = $this->app->make(CacheHttp01Handler::class);
+            $content = $this->app->make(CacheRepository::class)->get("{$handler->prefix}:{$token}");
 
             if ($content === null) {
                 abort(404);

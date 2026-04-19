@@ -12,7 +12,7 @@ final class CacheHttp01Handler implements ChallengeHandlerInterface
 {
     public function __construct(
         private readonly Repository $cache,
-        private readonly string $prefix = 'acme-challenge',
+        public readonly string $prefix = 'acme-challenge',
     ) {}
 
     public function supports(AuthorizationChallengeEnum $type): bool
