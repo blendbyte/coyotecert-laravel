@@ -2,14 +2,12 @@
 
 # CoyoteCert for Laravel
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/blendbyte/coyotecert-laravel.svg?style=flat-square)](https://packagist.org/packages/blendbyte/coyotecert-laravel)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-787cb5?style=flat-square)](https://www.php.net)
 [![Laravel](https://img.shields.io/badge/Laravel-12%2B-FF2D20?style=flat-square)](https://laravel.com)
-[![Tests](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml)
-[![Static Analysis](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml)
-[![Coding Standards](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/coding-standards.yml/badge.svg?style=flat-square)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/coding-standards.yml)
-[![Latest Version](https://img.shields.io/packagist/v/blendbyte/coyotecert-laravel?style=flat-square)](https://packagist.org/packages/blendbyte/coyotecert-laravel)
-[![Total Downloads](https://img.shields.io/packagist/dt/blendbyte/coyotecert-laravel?style=flat-square)](https://packagist.org/packages/blendbyte/coyotecert-laravel)
+[![Tests](https://img.shields.io/github/actions/workflow/status/blendbyte/coyotecert-laravel/tests.yml?branch=main&style=flat-square&label=tests)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml)
+[![Static Analysis](https://img.shields.io/github/actions/workflow/status/blendbyte/coyotecert-laravel/static-analysis.yml?branch=main&style=flat-square&label=phpstan)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml)
 
 Free TLS certificates, straight from the ACME catalog. No nginx reloads, no cron entries, no shell scripts, no separate container. Just a service provider, a config file, and a couple of Artisan commands.
 
