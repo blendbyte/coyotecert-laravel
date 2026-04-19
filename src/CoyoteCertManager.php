@@ -78,6 +78,19 @@ final class CoyoteCertManager
         };
     }
 
+    private function requireConfig(string $key, string $envVar): string
+    {
+        $value = (string) $this->config->get($key, '');
+
+        if ($value === '') {
+            throw new InvalidArgumentException(
+                "Missing required configuration [{$key}]. Set {$envVar} in your .env.",
+            );
+        }
+
+        return $value;
+    }
+
     private function resolveProvider(): AcmeProviderInterface
     {
         $provider = (string) $this->config->get('coyotecert.provider', '');
@@ -93,15 +106,15 @@ final class CoyoteCertManager
             'letsencrypt-staging' => new LetsEncryptStaging(),
             'buypass'             => new BuypassGo(),
             'buypass-staging'     => new BuypassGoStaging(),
-            'zerossl'             => new ZeroSSL(
-                (string) $this->config->get('coyotecert.providers.zerossl.api_key', ''),
+            'zerossl' => new ZeroSSL(
+                $this->requireConfig('coyotecert.providers.zerossl.api_key', 'COYOTECERT_ZEROSSL_API_KEY'),
             ),
             'google' => new GoogleTrustServices(
-                (string) $this->config->get('coyotecert.providers.google.eab_kid', ''),
-                (string) $this->config->get('coyotecert.providers.google.eab_hmac', ''),
+                $this->requireConfig('coyotecert.providers.google.eab_kid', 'COYOTECERT_GOOGLE_EAB_KID'),
+                $this->requireConfig('coyotecert.providers.google.eab_hmac', 'COYOTECERT_GOOGLE_EAB_HMAC'),
             ),
             'custom' => new CustomProvider(
-                (string) $this->config->get('coyotecert.providers.custom.directory_url', ''),
+                $this->requireConfig('coyotecert.providers.custom.directory_url', 'COYOTECERT_CUSTOM_DIRECTORY_URL'),
             ),
             default => throw new InvalidArgumentException(
                 "Unknown provider [{$provider}]. Supported: letsencrypt, letsencrypt-staging, buypass, buypass-staging, zerossl, google, custom.",
