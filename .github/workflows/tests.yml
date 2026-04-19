@@ -42,3 +42,10 @@ jobs:
         with:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage to Codecov
+        if: matrix.php == '8.5' && matrix.laravel == '13'
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
