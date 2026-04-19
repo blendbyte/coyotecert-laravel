@@ -104,8 +104,8 @@ return [
     // How many days before expiry to trigger renewal in cert:renew.
     'renewal_days' => (int) env('COYOTECERT_RENEWAL_DAYS', 30),
 
-    // Domains that cert:renew processes automatically (without --domain).
-    'domains' => [
+    // Identities that cert:renew processes automatically (without --identity).
+    'identities' => [
         // 'example.com',
         // 'www.example.com',
     ],
@@ -183,7 +183,7 @@ Days remaining: 89
 
 ### cert:renew
 
-Renew certificates that are within the renewal window. By default, processes every domain in `coyotecert.domains`.
+Renew certificates that are within the renewal window. By default, processes every identity in `coyotecert.identities`.
 
 ```bash
 php artisan cert:renew
@@ -194,23 +194,23 @@ Renewed: example.com
 Renewed: www.example.com
 ```
 
-Renew a single domain without touching the config:
+Renew a single identity without touching the config:
 
 ```bash
-php artisan cert:renew --domain=example.com
+php artisan cert:renew --identity=example.com
 ```
 
 Force re-issue regardless of expiry:
 
 ```bash
-php artisan cert:renew --domain=example.com --force
+php artisan cert:renew --identity=example.com --force
 ```
 
-If a domain fails, the command reports the error, continues to the next domain, and exits with a non-zero status code at the end. Your monitoring picks that up.
+If an identity fails, the command reports the error, continues to the next one, and exits with a non-zero status code at the end. Your monitoring picks that up.
 
 ### cert:list
 
-Show the status of every domain in `coyotecert.domains` at a glance.
+Show the status of every identity in `coyotecert.identities` at a glance.
 
 ```bash
 php artisan cert:list
@@ -218,7 +218,7 @@ php artisan cert:list
 
 ```
 +------------------+---------------------+---------------------+----------------+---------+
-| Domain           | Issued At           | Expires At          | Days Remaining | Expired |
+| Identity         | Issued At           | Expires At          | Days Remaining | Expired |
 +------------------+---------------------+---------------------+----------------+---------+
 | example.com      | 2025-04-19 14:22:05 | 2025-07-18 14:22:05 | 89             | No      |
 | www.example.com  | Not issued          | Not issued          | -              | -       |
@@ -227,7 +227,7 @@ php artisan cert:list
 
 ### cert:status
 
-Check the current certificate for a domain without hitting the CA at all.
+Check the current certificate for an identity without hitting the CA at all.
 
 ```bash
 php artisan cert:status example.com
@@ -237,7 +237,8 @@ php artisan cert:status example.com
 +----------------+------------------------------+
 | Field          | Value                        |
 +----------------+------------------------------+
-| Domain         | example.com                  |
+| Identity       | example.com                  |
+| Identifiers    | example.com                  |
 | Key Type       | EC_P256                       |
 | Issued At      | 2025-04-19 14:22:05          |
 | Expires At     | 2025-07-18 14:22:05          |
@@ -276,7 +277,7 @@ Three events are dispatched through the Laravel event bus, so you can react to c
 | `CertificateRenewed` | After a certificate is replaced (fires alongside `CertificateIssued`) |
 | `CertificateExpiring` | When `cert:renew` detects a cert is within the renewal window, before it renews |
 
-All three carry a `StoredCertificate $certificate` and a `string $domain`. `CertificateExpiring` also carries `int $daysUntilExpiry`.
+All three carry a `StoredCertificate $certificate` and a `string $identity`. `CertificateExpiring` also carries `int $daysUntilExpiry`.
 
 ### Reloading nginx after issuance
 
@@ -290,7 +291,7 @@ class ReloadNginxOnCertChange
     {
         // Write the new cert to disk then reload nginx.
         $cert = $event->certificate;
-        file_put_contents('/etc/nginx/certs/' . $event->domain . '.pem', $cert->fullchain);
+        file_put_contents('/etc/nginx/certs/' . $event->identity . '.pem', $cert->fullchain);
         shell_exec('nginx -s reload');
     }
 }
@@ -320,7 +321,7 @@ class SendExpiryAlert
         // If it fails, your monitoring has the failure and this alert
         // gives you a head start.
         Notification::route('mail', 'ops@example.com')
-            ->notify(new CertExpiringNotification($event->domain, $event->daysUntilExpiry));
+            ->notify(new CertExpiringNotification($event->identity, $event->daysUntilExpiry));
     }
 }
 ```
@@ -337,7 +338,7 @@ class PushCertToVault implements ShouldQueue
     public function handle(CertificateIssued $event): void
     {
         // Push the new cert to HashiCorp Vault, AWS Secrets Manager, etc.
-        Vault::write('secret/tls/' . $event->domain, [
+        Vault::write('secret/tls/' . $event->identity, [
             'cert'    => $event->certificate->certificate,
             'key'     => $event->certificate->privateKey,
             'chain'   => $event->certificate->fullchain,
@@ -370,10 +371,10 @@ The job calls `issueOrRenew()` on the manager. If the certificate does not need 
 
 The service provider registers a daily `cert:renew` in Laravel's scheduler automatically. You do not need to add anything to `routes/console.php` or `app/Console/Kernel.php`. As long as your app has the standard scheduler cron entry (`* * * * * php artisan schedule:run >> /dev/null 2>&1`), renewals happen on their own.
 
-Domains are read from `coyotecert.domains` in your config. Add every domain you want to auto-renew:
+Identities are read from `coyotecert.identities` in your config. Add every identity you want to auto-renew:
 
 ```php
-'domains' => [
+'identities' => [
     'example.com',
     'www.example.com',
     'api.example.com',

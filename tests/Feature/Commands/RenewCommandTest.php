@@ -16,8 +16,8 @@ use Illuminate\Support\Facades\Event;
 use Mockery;
 use Mockery\MockInterface;
 
-it('renews all configured domains and reports success', function (): void {
-    config(['coyotecert.domains' => ['example.com', 'www.example.com']]);
+it('renews all configured identities and reports success', function (): void {
+    config(['coyotecert.identities' => ['example.com', 'www.example.com']]);
 
     $cert = new StoredCertificate(
         certificate: '---cert---',
@@ -51,7 +51,7 @@ it('renews all configured domains and reports success', function (): void {
         ->expectsOutputToContain('Renewed: www.example.com');
 });
 
-it('renews a single domain when --domain is given', function (): void {
+it('renews a single identity when --identity is given', function (): void {
     $cert = new StoredCertificate(
         certificate: '---cert---',
         privateKey: '---key---',
@@ -80,7 +80,7 @@ it('renews a single domain when --domain is given', function (): void {
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:renew', ['--domain' => 'example.com'])
+    $this->artisan('cert:renew', ['--identity' => 'example.com'])
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('Renewed: example.com');
 });
@@ -108,12 +108,12 @@ it('calls issue() instead of issueOrRenew() when --force is given', function ():
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:renew', ['--domain' => 'example.com', '--force' => true])
+    $this->artisan('cert:renew', ['--identity' => 'example.com', '--force' => true])
         ->assertExitCode(Command::SUCCESS);
 });
 
-it('returns failure when a domain renewal throws', function (): void {
-    config(['coyotecert.domains' => ['example.com']]);
+it('returns failure when an identity renewal throws', function (): void {
+    config(['coyotecert.identities' => ['example.com']]);
 
     /** @var MockInterface&CoyoteCert $coyoteCert */
     $coyoteCert = Mockery::mock(CoyoteCert::class);
@@ -136,7 +136,7 @@ it('returns failure when a domain renewal throws', function (): void {
 });
 
 it('dispatches CertificateExpiring when the cert is within the renewal window', function (): void {
-    config(['coyotecert.domains' => ['example.com'], 'coyotecert.renewal_days' => 30]);
+    config(['coyotecert.identities' => ['example.com'], 'coyotecert.renewal_days' => 30]);
 
     $expiringSoon = new StoredCertificate(
         certificate: '---cert---',
@@ -183,12 +183,12 @@ it('dispatches CertificateExpiring when the cert is within the renewal window', 
 
     Event::assertDispatched(
         CertificateExpiring::class,
-        fn(CertificateExpiring $e) => $e->domain === 'example.com' && $e->daysUntilExpiry <= 30,
+        fn(CertificateExpiring $e) => $e->identity === 'example.com' && $e->daysUntilExpiry <= 30,
     );
 });
 
-it('skips a domain whose certificate is not within the renewal window', function (): void {
-    config(['coyotecert.domains' => ['example.com'], 'coyotecert.renewal_days' => 30]);
+it('skips an identity whose certificate is not within the renewal window', function (): void {
+    config(['coyotecert.identities' => ['example.com'], 'coyotecert.renewal_days' => 30]);
 
     $freshCert = new StoredCertificate(
         certificate: '---cert---',
@@ -219,10 +219,10 @@ it('skips a domain whose certificate is not within the renewal window', function
         ->expectsOutputToContain('Skipped: example.com');
 });
 
-it('warns and returns success when no domains are configured', function (): void {
-    config(['coyotecert.domains' => []]);
+it('warns and returns success when no identities are configured', function (): void {
+    config(['coyotecert.identities' => []]);
 
     $this->artisan('cert:renew')
         ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('No domains configured');
+        ->expectsOutputToContain('No identities configured');
 });

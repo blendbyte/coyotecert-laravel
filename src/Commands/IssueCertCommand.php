@@ -10,18 +10,18 @@ use Throwable;
 
 final class IssueCertCommand extends Command
 {
-    protected $signature = 'cert:issue {domain}';
+    protected $signature = 'cert:issue {identity}';
 
-    protected $description = 'Issue a new TLS certificate for a domain';
+    protected $description = 'Issue a new TLS certificate for an identity';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $domain = (string) $this->input->getArgument('domain');
+        $identity = (string) $this->input->getArgument('identity');
 
         try {
-            $cert = $manager->for($domain)->issue();
+            $cert = $manager->for($identity)->issue();
         } catch (Throwable $e) {
-            $this->error("Failed to issue certificate for [{$domain}]: " . $e->getMessage());
+            $this->error("Failed to issue certificate for [{$identity}]: " . $e->getMessage());
 
             return Command::FAILURE;
         }

@@ -50,7 +50,7 @@ it('revokes and deletes a certificate for a known domain', function (): void {
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:revoke', ['domain' => 'example.com'])
+    $this->artisan('cert:revoke', ['identity' => 'example.com'])
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('revoked and deleted');
 });
@@ -66,13 +66,13 @@ it('returns failure and prints an error when no certificate is found', function 
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:revoke', ['domain' => 'unknown.example.com'])
+    $this->artisan('cert:revoke', ['identity' => 'unknown.example.com'])
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('No certificate found for [unknown.example.com]');
 });
 
 it('returns failure and shows valid codes when an invalid reason is given', function (): void {
-    $this->artisan('cert:revoke', ['domain' => 'example.com', '--reason' => '99'])
+    $this->artisan('cert:revoke', ['identity' => 'example.com', '--reason' => '99'])
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('Invalid reason code [99]')
         ->expectsOutputToContain('Valid codes:');

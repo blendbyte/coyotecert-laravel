@@ -10,6 +10,6 @@ final class CertificateIssued
 {
     public function __construct(
         public readonly StoredCertificate $certificate,
-        public readonly string $domain,
+        public readonly string $identity,
     ) {}
 }

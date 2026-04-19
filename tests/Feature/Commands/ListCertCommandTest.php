@@ -13,8 +13,8 @@ use Illuminate\Console\Command;
 use Mockery;
 use Mockery\MockInterface;
 
-it('lists a domain with an active certificate', function (): void {
-    config(['coyotecert.domains' => ['example.com']]);
+it('lists an identity with an active certificate', function (): void {
+    config(['coyotecert.identities' => ['example.com']]);
 
     $cert = new StoredCertificate(
         certificate: '---cert---',
@@ -44,8 +44,8 @@ it('lists a domain with an active certificate', function (): void {
         ->expectsOutputToContain('example.com');
 });
 
-it('lists a domain that has no certificate yet', function (): void {
-    config(['coyotecert.domains' => ['example.com']]);
+it('lists an identity that has no certificate yet', function (): void {
+    config(['coyotecert.identities' => ['example.com']]);
 
     /** @var MockInterface&StorageInterface $storage */
     $storage = Mockery::mock(StorageInterface::class);
@@ -65,7 +65,7 @@ it('lists a domain that has no certificate yet', function (): void {
 });
 
 it('shows expired status for an expired certificate', function (): void {
-    config(['coyotecert.domains' => ['example.com']]);
+    config(['coyotecert.identities' => ['example.com']]);
 
     $expiredCert = new StoredCertificate(
         certificate: '---cert---',
@@ -95,10 +95,10 @@ it('shows expired status for an expired certificate', function (): void {
         ->expectsOutputToContain('Yes');
 });
 
-it('warns and returns success when no domains are configured', function (): void {
-    config(['coyotecert.domains' => []]);
+it('warns and returns success when no identities are configured', function (): void {
+    config(['coyotecert.identities' => []]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('No domains configured');
+        ->expectsOutputToContain('No identities configured');
 });

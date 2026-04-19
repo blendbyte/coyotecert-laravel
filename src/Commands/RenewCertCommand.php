@@ -12,54 +12,54 @@ use Throwable;
 
 final class RenewCertCommand extends Command
 {
-    protected $signature = 'cert:renew {--domain=} {--force}';
+    protected $signature = 'cert:renew {--identity=} {--force}';
 
-    protected $description = 'Renew TLS certificates for configured domains';
+    protected $description = 'Renew TLS certificates for configured identities';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $domainOption = $this->input->getOption('domain');
-        $force        = (bool) $this->input->getOption('force');
-        $renewalDays  = (int) config('coyotecert.renewal_days', 30);
-        $keyType      = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
+        $identityOption = $this->input->getOption('identity');
+        $force          = (bool) $this->input->getOption('force');
+        $renewalDays    = (int) config('coyotecert.renewal_days', 30);
+        $keyType        = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
 
-        /** @var list<string> $domains */
-        $domains = $domainOption !== null
-            ? [(string) $domainOption]
-            : array_values(array_map('strval', (array) config('coyotecert.domains', [])));
+        /** @var list<string> $identities */
+        $identities = $identityOption !== null
+            ? [(string) $identityOption]
+            : array_values(array_map('strval', (array) config('coyotecert.identities', [])));
 
-        if ($domains === []) {
-            $this->warn('No domains configured. Add domains to coyotecert.domains or pass --domain.');
+        if ($identities === []) {
+            $this->warn('No identities configured. Add identities to coyotecert.identities or pass --identity.');
 
             return Command::SUCCESS;
         }
 
         $anyFailed = false;
 
-        foreach ($domains as $domain) {
+        foreach ($identities as $identity) {
             try {
                 if (!$force) {
-                    $existing = $manager->storage()->getCertificate($domain, $keyType);
+                    $existing = $manager->storage()->getCertificate($identity, $keyType);
 
                     if ($existing !== null) {
                         if ($existing->expiresWithin($renewalDays)) {
-                            event(new CertificateExpiring($existing, $domain, $existing->daysUntilExpiry()));
+                            event(new CertificateExpiring($existing, $identity, $existing->daysUntilExpiry()));
                         } else {
-                            $this->line("Skipped: {$domain} ({$existing->daysUntilExpiry()} days remaining)");
+                            $this->line("Skipped: {$identity} ({$existing->daysUntilExpiry()} days remaining)");
                             continue;
                         }
                     }
                 }
 
                 if ($force) {
-                    $manager->for($domain)->issue();
+                    $manager->for($identity)->issue();
                 } else {
-                    $manager->for($domain)->issueOrRenew($renewalDays);
+                    $manager->for($identity)->issueOrRenew($renewalDays);
                 }
 
-                $this->info("Renewed: {$domain}");
+                $this->info("Renewed: {$identity}");
             } catch (Throwable $e) {
-                $this->error("Failed [{$domain}]: " . $e->getMessage());
+                $this->error("Failed [{$identity}]: " . $e->getMessage());
                 $anyFailed = true;
             }
         }

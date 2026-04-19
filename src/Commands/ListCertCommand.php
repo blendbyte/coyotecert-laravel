@@ -12,17 +12,17 @@ final class ListCertCommand extends Command
 {
     protected $signature = 'cert:list';
 
-    protected $description = 'List all configured domains and their certificate status';
+    protected $description = 'List all configured identities and their certificate status';
 
     public function handle(CoyoteCertManager $manager): int
     {
         $keyType = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
 
-        /** @var list<string> $domains */
-        $domains = array_values(array_map('strval', (array) config('coyotecert.domains', [])));
+        /** @var list<string> $identities */
+        $identities = array_values(array_map('strval', (array) config('coyotecert.identities', [])));
 
-        if ($domains === []) {
-            $this->warn('No domains configured. Add domains to coyotecert.domains.');
+        if ($identities === []) {
+            $this->warn('No identities configured. Add identities to coyotecert.identities.');
 
             return Command::SUCCESS;
         }
@@ -30,14 +30,14 @@ final class ListCertCommand extends Command
         $storage = $manager->storage();
         $rows    = [];
 
-        foreach ($domains as $domain) {
-            $cert = $storage->getCertificate($domain, $keyType);
+        foreach ($identities as $identity) {
+            $cert = $storage->getCertificate($identity, $keyType);
 
             if ($cert === null) {
-                $rows[] = [$domain, 'Not issued', 'Not issued', '-', '-'];
+                $rows[] = [$identity, 'Not issued', 'Not issued', '-', '-'];
             } else {
                 $rows[] = [
-                    $domain,
+                    $identity,
                     $cert->issuedAt->format('Y-m-d H:i:s'),
                     $cert->expiresAt->format('Y-m-d H:i:s'),
                     (string) $cert->daysUntilExpiry(),
@@ -47,7 +47,7 @@ final class ListCertCommand extends Command
         }
 
         $this->table(
-            ['Domain', 'Issued At', 'Expires At', 'Days Remaining', 'Expired'],
+            ['Identity', 'Issued At', 'Expires At', 'Days Remaining', 'Expired'],
             $rows,
         );
 

@@ -37,7 +37,7 @@ it('shows the certificate status table for a known domain', function (): void {
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:status', ['domain' => 'example.com'])
+    $this->artisan('cert:status', ['identity' => 'example.com'])
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('example.com');
 });
@@ -53,7 +53,7 @@ it('returns failure and prints an error when no certificate is found', function 
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:status', ['domain' => 'unknown.example.com'])
+    $this->artisan('cert:status', ['identity' => 'unknown.example.com'])
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('No certificate found for [unknown.example.com]');
 });

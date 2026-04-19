@@ -35,7 +35,7 @@ it('issues a certificate and reports success', function (): void {
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:issue', ['domain' => 'example.com'])
+    $this->artisan('cert:issue', ['identity' => 'example.com'])
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('Certificate issued successfully.');
 });
@@ -51,7 +51,7 @@ it('returns failure and shows an error when issuance throws', function (): void 
 
     $this->instance(CoyoteCertManager::class, $manager);
 
-    $this->artisan('cert:issue', ['domain' => 'example.com'])
+    $this->artisan('cert:issue', ['identity' => 'example.com'])
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('Failed to issue certificate for [example.com]: ACME error');
 });

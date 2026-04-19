@@ -39,8 +39,8 @@ final class CoyoteCertManager
         private readonly LoggerInterface $logger,
     ) {}
 
-    /** @param string|array<int, string> $domains */
-    public function for(string|array $domains): CoyoteCert
+    /** @param string|array<int, string> $identities */
+    public function for(string|array $identities): CoyoteCert
     {
         $email   = (string) $this->config->get('coyotecert.email', '');
         $keyType = KeyType::from((string) $this->config->get('coyotecert.key_type', 'EC_P256'));
@@ -49,16 +49,16 @@ final class CoyoteCertManager
             ->email($email)
             ->storage($this->storage())
             ->logger($this->logger)
-            ->identifiers($domains)
+            ->identifiers($identities)
             ->challenge($this->resolveChallenge())
             ->keyType($keyType)
-            ->onIssued(function (StoredCertificate $certificate) use ($domains): void {
-                $domain = is_array($domains) ? $domains[0] : $domains;
-                $this->events->dispatch(new CertificateIssued($certificate, $domain));
+            ->onIssued(function (StoredCertificate $certificate) use ($identities): void {
+                $identity = is_array($identities) ? $identities[0] : $identities;
+                $this->events->dispatch(new CertificateIssued($certificate, $identity));
             })
-            ->onRenewed(function (StoredCertificate $certificate) use ($domains): void {
-                $domain = is_array($domains) ? $domains[0] : $domains;
-                $this->events->dispatch(new CertificateRenewed($certificate, $domain));
+            ->onRenewed(function (StoredCertificate $certificate) use ($identities): void {
+                $identity = is_array($identities) ? $identities[0] : $identities;
+                $this->events->dispatch(new CertificateRenewed($certificate, $identity));
             });
     }
 

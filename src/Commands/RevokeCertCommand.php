@@ -11,13 +11,13 @@ use Illuminate\Console\Command;
 
 final class RevokeCertCommand extends Command
 {
-    protected $signature = 'cert:revoke {domain} {--reason=0}';
+    protected $signature = 'cert:revoke {identity} {--reason=0}';
 
     protected $description = 'Revoke and delete a stored TLS certificate';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $domain       = (string) $this->input->getArgument('domain');
+        $identity     = (string) $this->input->getArgument('identity');
         $reasonInt    = (int) $this->input->getOption('reason');
         $validReasons = array_column(RevocationReason::cases(), 'value');
 
@@ -32,18 +32,18 @@ final class RevokeCertCommand extends Command
         $keyType = KeyType::from((string) config('coyotecert.key_type', 'EC_P256'));
 
         $storage = $manager->storage();
-        $cert    = $storage->getCertificate($domain, $keyType);
+        $cert    = $storage->getCertificate($identity, $keyType);
 
         if ($cert === null) {
-            $this->error("No certificate found for [{$domain}].");
+            $this->error("No certificate found for [{$identity}].");
 
             return Command::FAILURE;
         }
 
-        $manager->for($domain)->revoke($cert, $reason);
-        $storage->deleteCertificate($domain, $keyType);
+        $manager->for($identity)->revoke($cert, $reason);
+        $storage->deleteCertificate($identity, $keyType);
 
-        $this->info("Certificate for [{$domain}] has been revoked and deleted.");
+        $this->info("Certificate for [{$identity}] has been revoked and deleted.");
 
         return Command::SUCCESS;
     }
