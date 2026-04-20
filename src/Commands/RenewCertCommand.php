@@ -6,6 +6,7 @@ namespace CoyoteCert\Laravel\Commands;
 
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Laravel\Events\CertificateExpiring;
+use CoyoteCert\Laravel\Events\CertificateFailed;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -69,6 +70,7 @@ final class RenewCertCommand extends Command
                 $this->info("Renewed: {$primary}");
             } catch (Throwable $e) {
                 $this->error("Failed [{$primary}]: " . $e->getMessage());
+                event(new CertificateFailed($primary, $e));
                 $anyFailed = true;
             }
         }

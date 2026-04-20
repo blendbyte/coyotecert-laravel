@@ -8,6 +8,7 @@ use CoyoteCert\CoyoteCert;
 use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Laravel\Events\CertificateExpiring;
+use CoyoteCert\Laravel\Events\CertificateFailed;
 use CoyoteCert\Storage\StorageInterface;
 use CoyoteCert\Storage\StoredCertificate;
 use DateTimeImmutable;
@@ -144,6 +145,35 @@ it('returns failure when an identity renewal throws', function (): void {
     $this->artisan('cert:renew')
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('Failed [example.com]');
+});
+
+it('dispatches CertificateFailed when renewal throws', function (): void {
+    config(['coyotecert.identities' => ['example.com']]);
+
+    Event::fake([CertificateFailed::class]);
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issueOrRenew')->once()->andThrow(new \RuntimeException('ACME error'));
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')->andReturn(null);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
+    $manager->shouldReceive('for')->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:renew')->assertExitCode(Command::FAILURE);
+
+    Event::assertDispatched(
+        CertificateFailed::class,
+        fn (CertificateFailed $e) => $e->identity === 'example.com' && $e->exception->getMessage() === 'ACME error',
+    );
 });
 
 it('dispatches CertificateExpiring when the cert is within the renewal window', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CoyoteCert\Laravel\Commands;
 
 use CoyoteCert\Laravel\CoyoteCertManager;
+use CoyoteCert\Laravel\Events\CertificateFailed;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -32,6 +33,7 @@ final class IssueCertCommand extends Command
             $cert = $manager->for($identifiers)->issue();
         } catch (Throwable $e) {
             $this->error("Failed to issue certificate for [{$label}]: " . $e->getMessage());
+            event(new CertificateFailed($identities[0], $e));
 
             return Command::FAILURE;
         }

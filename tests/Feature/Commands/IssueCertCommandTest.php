@@ -7,9 +7,11 @@ namespace Tests\Feature\Commands;
 use CoyoteCert\CoyoteCert;
 use CoyoteCert\Enums\KeyType;
 use CoyoteCert\Laravel\CoyoteCertManager;
+use CoyoteCert\Laravel\Events\CertificateFailed;
 use CoyoteCert\Storage\StoredCertificate;
 use DateTimeImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Event;
 use Mockery;
 use Mockery\MockInterface;
 
@@ -82,4 +84,25 @@ it('returns failure and shows an error when issuance throws', function (): void 
     $this->artisan('cert:issue', ['identity' => 'example.com'])
         ->assertExitCode(Command::FAILURE)
         ->expectsOutputToContain('Failed to issue certificate for [example.com]: ACME error');
+});
+
+it('dispatches CertificateFailed when issuance throws', function (): void {
+    Event::fake([CertificateFailed::class]);
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issue')->once()->andThrow(new \RuntimeException('ACME error'));
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:issue', ['identity' => 'example.com'])->assertExitCode(Command::FAILURE);
+
+    Event::assertDispatched(
+        CertificateFailed::class,
+        fn (CertificateFailed $e) => $e->identity === 'example.com' && $e->exception->getMessage() === 'ACME error',
+    );
 });
