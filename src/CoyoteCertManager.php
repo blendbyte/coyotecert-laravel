@@ -40,9 +40,13 @@ final class CoyoteCertManager
         private readonly LoggerInterface $logger,
     ) {}
 
-    /** @param string|array<int, string> $identities */
+    /** @param non-empty-array<int, string>|string $identities */
     public function for(string|array $identities): CoyoteCert
     {
+        if (is_array($identities) && $identities === []) {
+            throw new InvalidArgumentException('At least one identity is required.');
+        }
+
         $email   = (string) $this->config->get('coyotecert.email', '');
         $keyType = $this->resolveKeyType();
 
