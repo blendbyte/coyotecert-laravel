@@ -18,13 +18,14 @@ final class IssueCertificateJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    /** @param string|list<string> $identities */
     public function __construct(
-        public readonly string $domain,
+        public readonly string|array $identities,
         public readonly int $renewalDays = 30,
     ) {}
 
     public function handle(CoyoteCertManager $manager): void
     {
-        $manager->for($this->domain)->issueOrRenew($this->renewalDays);
+        $manager->for($this->identities)->issueOrRenew($this->renewalDays);
     }
 }

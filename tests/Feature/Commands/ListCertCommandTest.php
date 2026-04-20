@@ -98,6 +98,38 @@ it('shows expired status for an expired certificate', function (): void {
         ->expectsOutputToContain('Yes');
 });
 
+it('lists a SAN identity group from config', function (): void {
+    config(['coyotecert.identities' => [['example.com', 'www.example.com']]]);
+
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn($cert);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:list')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('example.com, www.example.com');
+});
+
 it('warns and returns success when no identities are configured', function (): void {
     config(['coyotecert.identities' => []]);
 

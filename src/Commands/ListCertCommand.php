@@ -17,10 +17,15 @@ final class ListCertCommand extends Command
     {
         $keyType = $manager->resolveKeyType();
 
-        /** @var list<string> $identities */
-        $identities = array_values(array_map('strval', (array) config('coyotecert.identities', [])));
+        /** @var list<list<string>> $entries */
+        $entries = array_values(array_map(
+            static fn (mixed $e): array => is_array($e)
+                ? array_values(array_map('strval', $e))
+                : [(string) $e],
+            (array) config('coyotecert.identities', []),
+        ));
 
-        if ($identities === []) {
+        if ($entries === []) {
             $this->warn('No identities configured. Add identities to coyotecert.identities.');
 
             return Command::SUCCESS;
@@ -29,14 +34,15 @@ final class ListCertCommand extends Command
         $storage = $manager->storage();
         $rows    = [];
 
-        foreach ($identities as $identity) {
-            $cert = $storage->getCertificate($identity, $keyType);
+        foreach ($entries as $entry) {
+            $primary = $entry[0];
+            $cert    = $storage->getCertificate($primary, $keyType);
 
             if ($cert === null) {
-                $rows[] = [$identity, 'Not issued', 'Not issued', '-', '-'];
+                $rows[] = [implode(', ', $entry), 'Not issued', 'Not issued', '-', '-'];
             } else {
                 $rows[] = [
-                    $identity,
+                    implode(', ', $cert->domains),
                     $cert->issuedAt->format('Y-m-d H:i:s'),
                     $cert->expiresAt->format('Y-m-d H:i:s'),
                     (string) $cert->daysUntilExpiry(),

@@ -8,6 +8,10 @@ return [
     'key_type' => env('COYOTECERT_KEY_TYPE', 'EC_P256'),
     'renewal_days' => (int) env('COYOTECERT_RENEWAL_DAYS', 30),
     'schedule' => (bool) env('COYOTECERT_SCHEDULE', true),
+    // Each entry is either a single domain string or an array of domains for a SAN certificate.
+    // The first domain in an array is the primary identity used as the storage key.
+    // Examples:
+    //   'identities' => ['example.com', ['example.com', 'www.example.com']],
     'identities' => [],
 
     'providers' => [

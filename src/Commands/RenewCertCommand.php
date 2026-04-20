@@ -22,12 +22,17 @@ final class RenewCertCommand extends Command
         $renewalDays    = (int) config('coyotecert.renewal_days', 30);
         $keyType        = $manager->resolveKeyType();
 
-        /** @var list<string> $identities */
-        $identities = $identityOption !== null
-            ? [(string) $identityOption]
-            : array_values(array_map('strval', (array) config('coyotecert.identities', [])));
+        /** @var list<list<string>> $entries */
+        $entries = $identityOption !== null
+            ? [[(string) $identityOption]]
+            : array_values(array_map(
+                static fn (mixed $e): array => is_array($e)
+                    ? array_values(array_map('strval', $e))
+                    : [(string) $e],
+                (array) config('coyotecert.identities', []),
+            ));
 
-        if ($identities === []) {
+        if ($entries === []) {
             $this->warn('No identities configured. Add identities to coyotecert.identities or pass --identity.');
 
             return Command::SUCCESS;
@@ -35,30 +40,35 @@ final class RenewCertCommand extends Command
 
         $anyFailed = false;
 
-        foreach ($identities as $identity) {
-            try {
-                if (!$force) {
-                    $existing = $manager->storage()->getCertificate($identity, $keyType);
+        foreach ($entries as $entry) {
+            $primary = $entry[0];
 
-                    if ($existing !== null) {
-                        if ($existing->expiresWithin($renewalDays)) {
-                            event(new CertificateExpiring($existing, $identity, $existing->daysUntilExpiry()));
-                        } else {
-                            $this->line("Skipped: {$identity} ({$existing->daysUntilExpiry()} days remaining)");
-                            continue;
-                        }
+            try {
+                // Always fetch existing cert — needed to preserve SANs on renewal
+                $existing = $manager->storage()->getCertificate($primary, $keyType);
+
+                if (!$force && $existing !== null) {
+                    if ($existing->expiresWithin($renewalDays)) {
+                        event(new CertificateExpiring($existing, $primary, $existing->daysUntilExpiry()));
+                    } else {
+                        $this->line("Skipped: {$primary} ({$existing->daysUntilExpiry()} days remaining)");
+                        continue;
                     }
                 }
 
+                // Prefer stored domains to preserve SANs on renewal; fall back to config entry
+                $domains     = $existing !== null ? $existing->domains : $entry;
+                $identifiers = count($domains) === 1 ? $domains[0] : $domains;
+
                 if ($force) {
-                    $manager->for($identity)->issue();
+                    $manager->for($identifiers)->issue();
                 } else {
-                    $manager->for($identity)->issueOrRenew($renewalDays);
+                    $manager->for($identifiers)->issueOrRenew($renewalDays);
                 }
 
-                $this->info("Renewed: {$identity}");
+                $this->info("Renewed: {$primary}");
             } catch (Throwable $e) {
-                $this->error("Failed [{$identity}]: " . $e->getMessage());
+                $this->error("Failed [{$primary}]: " . $e->getMessage());
                 $anyFailed = true;
             }
         }

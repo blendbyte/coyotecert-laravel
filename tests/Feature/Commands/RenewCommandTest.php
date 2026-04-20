@@ -104,9 +104,16 @@ it('calls issue() instead of issueOrRenew() when --force is given', function ():
     $coyoteCert->shouldReceive('issue')->once()->andReturn($cert);
     $coyoteCert->shouldNotReceive('issueOrRenew');
 
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn(null);
+
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
     $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
     $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
 
     $this->instance(CoyoteCertManager::class, $manager);
@@ -223,6 +230,54 @@ it('skips an identity whose certificate is not within the renewal window', funct
     $this->artisan('cert:renew')
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('Skipped: example.com');
+});
+
+it('renews a SAN cert using stored domains from the existing certificate', function (): void {
+    config(['coyotecert.identities' => [['example.com', 'www.example.com']], 'coyotecert.renewal_days' => 30]);
+
+    $existing = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable('-60 days'),
+        expiresAt: new DateTimeImmutable('+20 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    $renewed = new StoredCertificate(
+        certificate: '---new-cert---',
+        privateKey: '---new-key---',
+        fullchain: '---new-fullchain---',
+        caBundle: '---new-ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issueOrRenew')->once()->andReturn($renewed);
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn($existing);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
+    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:renew')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Renewed: example.com');
 });
 
 it('warns and returns success when no identities are configured', function (): void {

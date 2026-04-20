@@ -62,6 +62,30 @@ it('passes a custom renewal window to issueOrRenew', function (): void {
     $job->handle($manager);
 });
 
+it('issues a SAN certificate when identities is an array', function (): void {
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issueOrRenew')->once()->with(30)->andReturn($cert);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
+
+    $job = new IssueCertificateJob(['example.com', 'www.example.com']);
+    $job->handle($manager);
+});
+
 it('implements ShouldQueue', function (): void {
     expect(new IssueCertificateJob('example.com'))->toBeInstanceOf(ShouldQueue::class);
 });

@@ -40,6 +40,34 @@ it('issues a certificate and reports success', function (): void {
         ->expectsOutputToContain('Certificate issued successfully.');
 });
 
+it('issues a SAN certificate when multiple identities are given', function (): void {
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issue')->once()->andReturn($cert);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:issue', ['identity' => ['example.com', 'www.example.com']])
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Certificate issued successfully.')
+        ->expectsOutputToContain('example.com, www.example.com');
+});
+
 it('returns failure and shows an error when issuance throws', function (): void {
     /** @var MockInterface&CoyoteCert $coyoteCert */
     $coyoteCert = Mockery::mock(CoyoteCert::class);
