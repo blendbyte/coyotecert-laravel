@@ -10,6 +10,7 @@ use CoyoteCert\Interfaces\ChallengeHandlerInterface;
 use CoyoteCert\Laravel\Challenge\CacheHttp01Handler;
 use CoyoteCert\Laravel\Events\CertificateIssued;
 use CoyoteCert\Laravel\Events\CertificateRenewed;
+use CoyoteCert\Laravel\Storage\ReconnectingPdo;
 use CoyoteCert\Provider\AcmeProviderInterface;
 use CoyoteCert\Provider\BuypassGo;
 use CoyoteCert\Provider\BuypassGoStaging;
@@ -18,7 +19,6 @@ use CoyoteCert\Provider\GoogleTrustServices;
 use CoyoteCert\Provider\LetsEncrypt;
 use CoyoteCert\Provider\LetsEncryptStaging;
 use CoyoteCert\Provider\ZeroSSL;
-use CoyoteCert\Laravel\Storage\ReconnectingPdo;
 use CoyoteCert\Storage\DatabaseStorage;
 use CoyoteCert\Storage\FilesystemStorage;
 use CoyoteCert\Storage\StorageInterface;
@@ -89,6 +89,7 @@ final class CoyoteCertManager
 
         if ($keyType === null) {
             $valid = implode(', ', array_column(KeyType::cases(), 'value'));
+
             throw new InvalidArgumentException(
                 "Invalid key type [{$value}]. Set COYOTECERT_KEY_TYPE to one of: {$valid}.",
             );
@@ -125,7 +126,7 @@ final class CoyoteCertManager
             'letsencrypt-staging' => new LetsEncryptStaging(),
             'buypass'             => new BuypassGo(),
             'buypass-staging'     => new BuypassGoStaging(),
-            'zerossl' => new ZeroSSL(
+            'zerossl'             => new ZeroSSL(
                 $this->requireConfig('coyotecert.providers.zerossl.api_key', 'COYOTECERT_ZEROSSL_API_KEY'),
             ),
             'google' => new GoogleTrustServices(
@@ -163,7 +164,7 @@ final class CoyoteCertManager
         $db    = $this->db;
 
         return new DatabaseStorage(
-            new ReconnectingPdo(fn (): \PDO => $db->connection($conn)->getPdo()),
+            new ReconnectingPdo(fn(): \PDO => $db->connection($conn)->getPdo()),
             $table,
         );
     }

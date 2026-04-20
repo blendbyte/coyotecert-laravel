@@ -19,7 +19,7 @@ final class ListCertCommand extends Command
 
         /** @var list<list<string>> $entries */
         $entries = array_values(array_map(
-            static fn (mixed $e): array => is_array($e)
+            static fn(mixed $e): array => is_array($e)
                 ? array_values(array_map('strval', $e))
                 : [(string) $e],
             (array) config('coyotecert.identities', []),

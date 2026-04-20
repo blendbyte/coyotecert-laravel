@@ -103,6 +103,6 @@ it('dispatches CertificateFailed when issuance throws', function (): void {
 
     Event::assertDispatched(
         CertificateFailed::class,
-        fn (CertificateFailed $e) => $e->identity === 'example.com' && $e->exception->getMessage() === 'ACME error',
+        fn(CertificateFailed $e) => $e->identity === 'example.com' && $e->exception->getMessage() === 'ACME error',
     );
 });

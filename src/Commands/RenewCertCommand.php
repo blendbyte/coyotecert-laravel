@@ -27,7 +27,7 @@ final class RenewCertCommand extends Command
         $entries = $identityOption !== null
             ? [[(string) $identityOption]]
             : array_values(array_map(
-                static fn (mixed $e): array => is_array($e)
+                static fn(mixed $e): array => is_array($e)
                     ? array_values(array_map('strval', $e))
                     : [(string) $e],
                 (array) config('coyotecert.identities', []),
