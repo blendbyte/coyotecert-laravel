@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use CoyoteCert\Laravel\Challenge\CacheHttp01Handler;
 use CoyoteCert\Laravel\CoyoteCertManager;
 
 it('binds CoyoteCertManager as a singleton in the container', function (): void {
@@ -11,6 +12,14 @@ it('binds CoyoteCertManager as a singleton in the container', function (): void 
     $second = $this->app->make(CoyoteCertManager::class);
 
     expect($first)->toBeInstanceOf(CoyoteCertManager::class);
+    expect($first)->toBe($second);
+});
+
+it('binds CacheHttp01Handler as a singleton in the container', function (): void {
+    $first  = $this->app->make(CacheHttp01Handler::class);
+    $second = $this->app->make(CacheHttp01Handler::class);
+
+    expect($first)->toBeInstanceOf(CacheHttp01Handler::class);
     expect($first)->toBe($second);
 });
 

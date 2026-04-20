@@ -73,6 +73,43 @@ it('returns failure and prints an error when no certificate is found', function 
         ->expectsOutputToContain('No certificate found for [unknown.example.com]');
 });
 
+it('returns failure and shows an error when the revoke call throws', function (): void {
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable('-1 day'),
+        expiresAt: new DateTimeImmutable('+89 days'),
+        domains: ['example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&\CoyoteCert\CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(\CoyoteCert\CoyoteCert::class);
+    $coyoteCert->shouldReceive('revoke')
+        ->once()
+        ->andThrow(new \RuntimeException('ACME revocation error'));
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn($cert);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
+    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:revoke', ['identity' => 'example.com'])
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('Failed to revoke certificate for [example.com]: ACME revocation error');
+});
+
 it('returns failure and shows valid codes when an invalid reason is given', function (): void {
     $this->artisan('cert:revoke', ['identity' => 'example.com', '--reason' => '99'])
         ->assertExitCode(Command::FAILURE)

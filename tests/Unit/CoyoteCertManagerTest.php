@@ -177,6 +177,127 @@ it('dispatches CertificateIssued when the onIssued callback fires', function ():
     }
 });
 
+it('for() throws when passed an empty array', function (): void {
+    [$manager] = buildManager([
+        'coyotecert.email'           => 'test@example.com',
+        'coyotecert.key_type'        => 'EC_P256',
+        'coyotecert.provider'        => 'letsencrypt',
+        'coyotecert.storage'         => 'filesystem',
+        'coyotecert.filesystem.path' => '/tmp/certs',
+        'coyotecert.challenge'       => 'http-01',
+    ]);
+
+    expect(fn() => $manager->for([]))->toThrow(InvalidArgumentException::class, 'At least one identity is required');
+});
+
+it('resolveKeyType() throws for an invalid key type value', function (): void {
+    [$manager] = buildManager(['coyotecert.key_type' => 'RSA_INVALID']);
+
+    expect(fn() => $manager->resolveKeyType())->toThrow(InvalidArgumentException::class, 'Invalid key type');
+});
+
+it('for() throws when a required provider credential is missing', function (): void {
+    [$manager] = buildManager([
+        'coyotecert.email'                        => 'test@example.com',
+        'coyotecert.key_type'                     => 'EC_P256',
+        'coyotecert.provider'                     => 'zerossl',
+        'coyotecert.providers.zerossl.api_key'    => '',
+        'coyotecert.storage'                      => 'filesystem',
+        'coyotecert.filesystem.path'              => '/tmp/certs',
+        'coyotecert.challenge'                    => 'http-01',
+    ]);
+
+    expect(fn() => $manager->for('example.com'))
+        ->toThrow(InvalidArgumentException::class, 'Missing required configuration');
+});
+
+it('for() throws for an unknown challenge type', function (): void {
+    [$manager] = buildManager([
+        'coyotecert.email'           => 'test@example.com',
+        'coyotecert.key_type'        => 'EC_P256',
+        'coyotecert.provider'        => 'letsencrypt',
+        'coyotecert.storage'         => 'filesystem',
+        'coyotecert.filesystem.path' => '/tmp/certs',
+        'coyotecert.challenge'       => 'tls-alpn-01',
+    ]);
+
+    expect(fn() => $manager->for('example.com'))->toThrow(InvalidArgumentException::class);
+});
+
+it('dispatches CertificateIssued with the primary domain when for() receives an array of identities', function (): void {
+    [$manager, , $events] = buildManager([
+        'coyotecert.email'           => 'test@example.com',
+        'coyotecert.key_type'        => 'EC_P256',
+        'coyotecert.provider'        => 'letsencrypt',
+        'coyotecert.storage'         => 'filesystem',
+        'coyotecert.filesystem.path' => '/tmp/certs',
+        'coyotecert.challenge'       => 'http-01',
+    ]);
+
+    $coyoteCert = $manager->for(['example.com', 'www.example.com']);
+
+    $prop = new ReflectionProperty(CoyoteCert::class, 'onIssuedCallbacks');
+    $prop->setAccessible(true);
+    /** @var callable[] $callbacks */
+    $callbacks = $prop->getValue($coyoteCert);
+
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    $events->shouldReceive('dispatch')->once()->with(
+        Mockery::on(fn(CertificateIssued $e): bool => $e->identity === 'example.com'),
+    );
+
+    foreach ($callbacks as $cb) {
+        $cb($cert);
+    }
+});
+
+it('dispatches CertificateRenewed with the primary domain when for() receives an array of identities', function (): void {
+    [$manager, , $events] = buildManager([
+        'coyotecert.email'           => 'test@example.com',
+        'coyotecert.key_type'        => 'EC_P256',
+        'coyotecert.provider'        => 'letsencrypt',
+        'coyotecert.storage'         => 'filesystem',
+        'coyotecert.filesystem.path' => '/tmp/certs',
+        'coyotecert.challenge'       => 'http-01',
+    ]);
+
+    $coyoteCert = $manager->for(['example.com', 'www.example.com']);
+
+    $prop = new ReflectionProperty(CoyoteCert::class, 'onRenewedCallbacks');
+    $prop->setAccessible(true);
+    /** @var callable[] $callbacks */
+    $callbacks = $prop->getValue($coyoteCert);
+
+    $cert = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    $events->shouldReceive('dispatch')->once()->with(
+        Mockery::on(fn(CertificateRenewed $e): bool => $e->identity === 'example.com'),
+    );
+
+    foreach ($callbacks as $cb) {
+        $cb($cert);
+    }
+});
+
 it('dispatches CertificateRenewed when the onRenewed callback fires', function (): void {
     [$manager, , $events] = buildManager([
         'coyotecert.email'           => 'test@example.com',

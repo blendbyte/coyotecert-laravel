@@ -310,6 +310,53 @@ it('renews a SAN cert using stored domains from the existing certificate', funct
         ->expectsOutputToContain('Renewed: example.com');
 });
 
+it('uses stored domains when --force is given and an existing certificate is found', function (): void {
+    $existing = new StoredCertificate(
+        certificate: '---cert---',
+        privateKey: '---key---',
+        fullchain: '---fullchain---',
+        caBundle: '---ca---',
+        issuedAt: new DateTimeImmutable('-60 days'),
+        expiresAt: new DateTimeImmutable('+30 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    $renewed = new StoredCertificate(
+        certificate: '---new-cert---',
+        privateKey: '---new-key---',
+        fullchain: '---new-fullchain---',
+        caBundle: '---new-ca---',
+        issuedAt: new DateTimeImmutable(),
+        expiresAt: new DateTimeImmutable('+90 days'),
+        domains: ['example.com', 'www.example.com'],
+        keyType: KeyType::EC_P256,
+    );
+
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issue')->once()->andReturn($renewed);
+    $coyoteCert->shouldNotReceive('issueOrRenew');
+
+    /** @var MockInterface&StorageInterface $storage */
+    $storage = Mockery::mock(StorageInterface::class);
+    $storage->shouldReceive('getCertificate')
+        ->with('example.com', KeyType::EC_P256)
+        ->andReturn($existing);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
+    $manager->shouldReceive('storage')->andReturn($storage);
+    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:renew', ['--identity' => 'example.com', '--force' => true])
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Renewed: example.com');
+});
+
 it('warns and returns success when no identities are configured', function (): void {
     config(['coyotecert.identities' => []]);
 
