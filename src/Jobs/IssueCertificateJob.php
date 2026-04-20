@@ -18,7 +18,7 @@ final class IssueCertificateJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    /** @param string|list<string> $identities */
+    /** @param string|array<string> $identities */
     public function __construct(
         public readonly string|array $identities,
         public readonly int $renewalDays = 30,

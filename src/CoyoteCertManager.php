@@ -40,7 +40,7 @@ final class CoyoteCertManager
         private readonly LoggerInterface $logger,
     ) {}
 
-    /** @param non-empty-array<int, string>|string $identities */
+    /** @param array<string>|string $identities */
     public function for(string|array $identities): CoyoteCert
     {
         if (is_array($identities) && $identities === []) {

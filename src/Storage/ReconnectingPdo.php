@@ -26,6 +26,7 @@ final class ReconnectingPdo extends PDO
         $this->connector = $connector;
     }
 
+    /** @param array<int|string, mixed> $options */
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
         return ($this->connector)()->prepare($query, $options);
