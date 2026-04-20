@@ -198,13 +198,13 @@ it('resolveKeyType() throws for an invalid key type value', function (): void {
 
 it('for() throws when a required provider credential is missing', function (): void {
     [$manager] = buildManager([
-        'coyotecert.email'                        => 'test@example.com',
-        'coyotecert.key_type'                     => 'EC_P256',
-        'coyotecert.provider'                     => 'zerossl',
-        'coyotecert.providers.zerossl.api_key'    => '',
-        'coyotecert.storage'                      => 'filesystem',
-        'coyotecert.filesystem.path'              => '/tmp/certs',
-        'coyotecert.challenge'                    => 'http-01',
+        'coyotecert.email'                     => 'test@example.com',
+        'coyotecert.key_type'                  => 'EC_P256',
+        'coyotecert.provider'                  => 'zerossl',
+        'coyotecert.providers.zerossl.api_key' => '',
+        'coyotecert.storage'                   => 'filesystem',
+        'coyotecert.filesystem.path'           => '/tmp/certs',
+        'coyotecert.challenge'                 => 'http-01',
     ]);
 
     expect(fn() => $manager->for('example.com'))

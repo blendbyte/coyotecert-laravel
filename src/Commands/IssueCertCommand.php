@@ -18,8 +18,8 @@ final class IssueCertCommand extends Command
     public function handle(CoyoteCertManager $manager): int
     {
         /** @var non-empty-list<string> $identities */
-        $identities = array_values(array_map('strval', (array) $this->argument('identity')));
-        $label      = implode(', ', $identities);
+        $identities  = array_values(array_map('strval', (array) $this->argument('identity')));
+        $label       = implode(', ', $identities);
         $identifiers = count($identities) === 1 ? $identities[0] : $identities;
 
         try {
