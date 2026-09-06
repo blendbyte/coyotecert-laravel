@@ -9,6 +9,7 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/blendbyte/coyotecert-laravel/tests.yml?branch=main&style=flat-square&label=tests)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/tests.yml)
 [![Static Analysis](https://img.shields.io/github/actions/workflow/status/blendbyte/coyotecert-laravel/static-analysis.yml?branch=main&style=flat-square&label=phpstan)](https://github.com/blendbyte/coyotecert-laravel/actions/workflows/static-analysis.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/blendbyte/coyotecert-laravel?style=flat-square)](https://codecov.io/gh/blendbyte/coyotecert-laravel)
+[![Plumb](https://plumbphp.dev/badges/blendbyte/coyotecert-laravel/composite.svg)](https://plumbphp.dev/blendbyte/coyotecert-laravel)
 
 Free TLS certificates, straight from the ACME catalog. No nginx reloads, no cron entries, no shell scripts, no separate container. Just a service provider, a config file, and a couple of Artisan commands.
 
