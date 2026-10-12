@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
+use CoyoteCert\Exceptions\StorageException;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
+use Throwable;
 
 final class ListCertCommand extends Command
 {
@@ -15,15 +17,15 @@ final class ListCertCommand extends Command
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $keyType = $manager->resolveKeyType();
+        try {
+            $entries = $manager->configuredIdentities();
+            $keyType = $manager->resolveKeyType();
+            $storage = $manager->storage();
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
 
-        /** @var list<list<string>> $entries */
-        $entries = array_values(array_map(
-            static fn(mixed $e): array => is_array($e)
-                ? array_values(array_map('strval', $e))
-                : [(string) $e],
-            (array) config('coyotecert.identities', []),
-        ));
+            return Command::FAILURE;
+        }
 
         if ($entries === []) {
             $this->warn('No identities configured. Add identities to coyotecert.identities.');
@@ -31,24 +33,28 @@ final class ListCertCommand extends Command
             return Command::SUCCESS;
         }
 
-        $storage = $manager->storage();
-        $rows    = [];
+        $rows = [];
 
         foreach ($entries as $entry) {
-            $primary = $entry[0];
-            $cert    = $storage->getCertificate($primary, $keyType);
+            $label = implode(', ', $entry);
 
-            if ($cert === null) {
-                $rows[] = [implode(', ', $entry), 'Not issued', 'Not issued', '-', '-'];
-            } else {
-                $rows[] = [
+            try {
+                $cert = $storage->getCertificate($entry[0], $keyType);
+            } catch (StorageException) {
+                $rows[] = [$label, 'Unreadable', 'Unreadable', '-', '-'];
+
+                continue;
+            }
+
+            $rows[] = $cert === null
+                ? [$label, 'Not issued', 'Not issued', '-', '-']
+                : [
                     implode(', ', $cert->domains),
                     $cert->issuedAt->format('Y-m-d H:i:s'),
                     $cert->expiresAt->format('Y-m-d H:i:s'),
                     (string) $cert->daysUntilExpiry(),
                     $cert->isExpired() ? 'Yes' : 'No',
                 ];
-            }
         }
 
         $this->table(

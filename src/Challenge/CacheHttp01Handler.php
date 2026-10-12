@@ -22,11 +22,24 @@ final class CacheHttp01Handler implements ChallengeHandlerInterface
 
     public function deploy(string $domain, string $token, string $keyAuthorization): void
     {
-        $this->cache->put("{$this->prefix}:{$token}", $keyAuthorization, 3600);
+        $this->cache->put($this->key($token), $keyAuthorization, 3600);
     }
 
     public function cleanup(string $domain, string $token): void
     {
-        $this->cache->forget("{$this->prefix}:{$token}");
+        $this->cache->forget($this->key($token));
+    }
+
+    /** The key authorization deployed for $token, or null when there is none. */
+    public function keyAuthorization(string $token): ?string
+    {
+        $value = $this->cache->get($this->key($token));
+
+        return is_string($value) ? $value : null;
+    }
+
+    private function key(string $token): string
+    {
+        return "{$this->prefix}:{$token}";
     }
 }

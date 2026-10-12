@@ -66,3 +66,15 @@ it('uses a custom prefix when provided', function (): void {
     $handler = new CacheHttp01Handler($cache, 'custom-prefix');
     $handler->deploy('example.com', 'abc123', 'key-auth');
 });
+
+it('returns the deployed key authorization for a token', function (): void {
+    /** @var MockInterface&Repository $cache */
+    $cache = Mockery::mock(Repository::class);
+    $cache->shouldReceive('get')->with('acme-challenge:abc123')->andReturn('abc123.thumbprint');
+    $cache->shouldReceive('get')->with('acme-challenge:missing')->andReturn(null);
+
+    $handler = new CacheHttp01Handler($cache);
+
+    expect($handler->keyAuthorization('abc123'))->toBe('abc123.thumbprint')
+        ->and($handler->keyAuthorization('missing'))->toBeNull();
+});

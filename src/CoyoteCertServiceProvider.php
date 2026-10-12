@@ -10,11 +10,13 @@ use CoyoteCert\Laravel\Commands\ListCertCommand;
 use CoyoteCert\Laravel\Commands\RenewCertCommand;
 use CoyoteCert\Laravel\Commands\RevokeCertCommand;
 use CoyoteCert\Laravel\Commands\StatusCertCommand;
+use CoyoteCert\Laravel\Http\AcmeChallengeController;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Database\DatabaseManager;
+use Illuminate\Contracts\Foundation\CachesRoutes;
+use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
@@ -32,10 +34,10 @@ final class CoyoteCertServiceProvider extends ServiceProvider
         $this->app->singleton(CoyoteCertManager::class, function ($app): CoyoteCertManager {
             return new CoyoteCertManager(
                 $app->make(ConfigRepository::class),
-                $app->make(CacheRepository::class),
                 $app->make(Dispatcher::class),
-                $app->make(DatabaseManager::class),
+                $app->make(ConnectionResolverInterface::class),
                 $app->make(LoggerInterface::class),
+                $app,
             );
         });
     }
@@ -61,7 +63,8 @@ final class CoyoteCertServiceProvider extends ServiceProvider
 
             if ((bool) $this->app->make(ConfigRepository::class)->get('coyotecert.schedule', true)) {
                 $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-                    $schedule->command('cert:renew')->daily();
+                    // Renewing the same certificate from two servers at once wastes CA rate limits
+                    $schedule->command('cert:renew')->daily()->withoutOverlapping()->onOneServer();
                 });
             }
         }
@@ -71,19 +74,17 @@ final class CoyoteCertServiceProvider extends ServiceProvider
 
     private function registerChallengeRoute(): void
     {
+        // A cached route file already contains the route
+        if ($this->app instanceof CachesRoutes && $this->app->routesAreCached()) {
+            return;
+        }
+
         /** @var Router $router */
         $router = $this->app->make(Router::class);
 
-        $router->get('/.well-known/acme-challenge/{token}', function (string $token): \Illuminate\Http\Response {
-            /** @var CacheHttp01Handler $handler */
-            $handler = $this->app->make(CacheHttp01Handler::class);
-            $content = $this->app->make(CacheRepository::class)->get("{$handler->prefix}:{$token}");
-
-            if ($content === null) {
-                abort(404);
-            }
-
-            return response((string) $content, 200, ['Content-Type' => 'text/plain']);
-        });
+        // A controller rather than a closure, so `php artisan route:cache` can serialize it
+        $router->get('/.well-known/acme-challenge/{token}', AcmeChallengeController::class)
+            ->where('token', '[A-Za-z0-9_-]+')
+            ->name('coyotecert.acme-challenge');
     }
 }

@@ -6,19 +6,25 @@ namespace CoyoteCert\Laravel\Commands;
 
 use CoyoteCert\Laravel\CoyoteCertManager;
 use Illuminate\Console\Command;
+use Throwable;
 
 final class StatusCertCommand extends Command
 {
-    protected $signature = 'cert:status {identity}';
+    protected $signature = 'cert:status {identity : The primary name the certificate is stored under}';
 
     protected $description = 'Show the status of a stored TLS certificate';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $identity = (string) $this->input->getArgument('identity');
-        $keyType  = $manager->resolveKeyType();
+        $identity = strtolower(trim((string) $this->input->getArgument('identity')));
 
-        $cert = $manager->storage()->getCertificate($identity, $keyType);
+        try {
+            $cert = $manager->storage()->getCertificate($identity, $manager->resolveKeyType());
+        } catch (Throwable $e) {
+            $this->error("Failed to read the certificate for [{$identity}]: " . $e->getMessage());
+
+            return Command::FAILURE;
+        }
 
         if ($cert === null) {
             $this->error("No certificate found for [{$identity}].");
@@ -31,6 +37,7 @@ final class StatusCertCommand extends Command
             [
                 ['Identity',       $identity],
                 ['Identifiers',    implode(', ', $cert->domains)],
+                ['Provider',       $cert->providerSlug ?? '-'],
                 ['Key Type',       $cert->keyType->value],
                 ['Issued At',      $cert->issuedAt->format('Y-m-d H:i:s')],
                 ['Expires At',     $cert->expiresAt->format('Y-m-d H:i:s')],

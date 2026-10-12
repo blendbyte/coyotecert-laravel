@@ -33,7 +33,7 @@ it('issues a certificate and reports success', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+    $manager->shouldReceive('for')->with(['example.com'])->andReturn($coyoteCert);
 
     $this->instance(CoyoteCertManager::class, $manager);
 
@@ -77,7 +77,7 @@ it('returns failure and shows an error when issuance throws', function (): void 
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+    $manager->shouldReceive('for')->with(['example.com'])->andReturn($coyoteCert);
 
     $this->instance(CoyoteCertManager::class, $manager);
 
@@ -95,7 +95,7 @@ it('dispatches CertificateFailed when issuance throws', function (): void {
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+    $manager->shouldReceive('for')->with(['example.com'])->andReturn($coyoteCert);
 
     $this->instance(CoyoteCertManager::class, $manager);
 
@@ -105,4 +105,35 @@ it('dispatches CertificateFailed when issuance throws', function (): void {
         CertificateFailed::class,
         fn(CertificateFailed $e) => $e->identity === 'example.com' && $e->exception->getMessage() === 'ACME error',
     );
+});
+
+it('lower-cases and de-duplicates the identities before issuing', function (): void {
+    /** @var MockInterface&CoyoteCert $coyoteCert */
+    $coyoteCert = Mockery::mock(CoyoteCert::class);
+    $coyoteCert->shouldReceive('issue')->once()->andReturn(fakeCertificate(['example.com', 'www.example.com']));
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('for')->once()->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:issue', ['identity' => ['Example.COM', 'www.example.com', 'example.com']])
+        ->assertExitCode(Command::SUCCESS);
+});
+
+it('reports a failure for identities that normalise to nothing', function (): void {
+    Event::fake([CertificateFailed::class]);
+
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('for')->once()->with([])->andThrow(new \InvalidArgumentException('At least one identity is required.'));
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:issue', ['identity' => [' ']])
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('At least one identity is required.');
+
+    Event::assertDispatched(CertificateFailed::class, fn(CertificateFailed $e) => $e->identity === '');
 });

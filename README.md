@@ -33,7 +33,7 @@ $cert = CoyoteCert::with(new LetsEncrypt())
     ->challenge(new MyCustomHttp01Handler('/var/www/.well-known/acme-challenge'))
     ->keyType(KeyType::EC_P256)
     ->onIssued(fn ($cert) => /* reload nginx, notify Slack, update secrets... */)
-    ->issueOrRenew(30);
+    ->issueOrRenew();
 ```
 
 You also need to write `MyCustomHttp01Handler`, manage the webroot directory, configure nginx to serve those files, set up a cron job, handle the `CertificateIssued` side-effects yourself, and restart nginx when the cert changes.
@@ -52,6 +52,9 @@ The service provider wires the storage, the logger, the challenge handler, and t
 
 - PHP 8.3+
 - Laravel 12.0+ or 13.0+
+- [blendbyte/coyotecert](https://github.com/blendbyte/coyotecert) 2.x (installed automatically)
+
+Upgrading from 1.x? See [UPGRADING.md](UPGRADING.md).
 
 ---
 
@@ -78,21 +81,20 @@ php artisan migrate
 
 ## Configuration
 
-Open `config/coyotecert.php`. Everything has a sensible default but you need to set at least your email address before the CA will issue anything.
+Open `config/coyotecert.php`. Everything has a sensible default, but you need to pick a provider before the CA will issue anything.
 
 ```php
 return [
     // Which CA to use. Required — no default, pick one consciously.
-    // letsencrypt | letsencrypt-staging | buypass | buypass-staging
-    // zerossl | google | custom
+    // letsencrypt | letsencrypt-staging | zerossl | google | sslcom | custom
     'provider' => env('COYOTECERT_PROVIDER'),
 
-    // Your contact email. The CA uses this to warn you about expiring
-    // certificates and account issues. Required.
+    // Contact email registered on your ACME account. The CA uses it for
+    // important account notices.
     'email' => env('COYOTECERT_EMAIL'),
 
     // Challenge type. http-01 works out of the box via the built-in route.
-    // dns-01 requires you to bind a custom ChallengeHandlerInterface.
+    // dns-01 uses the ChallengeHandlerInterface bound in the container.
     'challenge' => env('COYOTECERT_CHALLENGE', 'http-01'),
 
     // Where to persist certificates and the ACME account key.
@@ -103,13 +105,24 @@ return [
     // EC_P256 | EC_P384 | RSA_2048 | RSA_4096
     'key_type' => env('COYOTECERT_KEY_TYPE', 'EC_P256'),
 
-    // How many days before expiry to trigger renewal in cert:renew.
-    'renewal_days' => (int) env('COYOTECERT_RENEWAL_DAYS', 30),
+    // Empty (recommended): renew when the CA's ARI window opens, or once a
+    // third of the lifetime remains. A number of days also renews whenever
+    // that many days or fewer remain.
+    'renewal_days' => env('COYOTECERT_RENEWAL_DAYS'),
+
+    // ACME profile to request, e.g. Let's Encrypt's "shortlived". Empty = CA default.
+    'profile' => env('COYOTECERT_PROFILE'),
+
+    // Root CA common name to prefer when the CA offers alternate chains.
+    'preferred_chain' => env('COYOTECERT_PREFERRED_CHAIN'),
+
+    // Register a daily cert:renew in the scheduler.
+    'schedule' => (bool) env('COYOTECERT_SCHEDULE', true),
 
     // Identities that cert:renew processes automatically (without --identity).
     'identities' => [
         // 'example.com',
-        // 'www.example.com',
+        // ['example.com', 'www.example.com'],   // one SAN certificate
     ],
 
     // Provider-specific credentials.
@@ -121,8 +134,15 @@ return [
             'eab_kid'  => env('COYOTECERT_GOOGLE_EAB_KID'),
             'eab_hmac' => env('COYOTECERT_GOOGLE_EAB_HMAC'),
         ],
+        'sslcom' => [
+            'eab_kid'  => env('COYOTECERT_SSLCOM_EAB_KID'),     // optional
+            'eab_hmac' => env('COYOTECERT_SSLCOM_EAB_HMAC'),    // optional
+            'ecc'      => (bool) env('COYOTECERT_SSLCOM_ECC', false),
+        ],
         'custom' => [
             'directory_url' => env('COYOTECERT_CUSTOM_DIRECTORY_URL'),
+            'eab_kid'       => env('COYOTECERT_CUSTOM_EAB_KID'),  // optional
+            'eab_hmac'      => env('COYOTECERT_CUSTOM_EAB_HMAC'), // optional
         ],
     ],
 
@@ -162,8 +182,13 @@ That means:
 - No nginx location block to add.
 - Works behind a load balancer as long as the cache store is shared (Redis, Memcached, database).
 - Works on read-only filesystems and in containers.
+- Works with `php artisan route:cache`.
 
 The only thing you need is a working cache driver and DNS pointing at your app. Let's Encrypt does the rest.
+
+Before asking the CA to validate, CoyoteCert fetches the token from your domain itself. That self-test follows redirects only to http and https on ports 80 and 443, as Let's Encrypt does, so an HTTP-to-HTTPS redirect is fine.
+
+Wildcard names (`*.example.com`) can't be validated over HTTP; they need [DNS-01](#dns-01-challenge).
 
 ---
 
@@ -179,13 +204,20 @@ php artisan cert:issue example.com
 
 ```
 Certificate issued successfully.
+Identities: example.com
 Expires: 2025-07-18 14:22:05
 Days remaining: 89
 ```
 
+Pass several names for one SAN certificate. The first is the primary name it is stored under:
+
+```bash
+php artisan cert:issue example.com www.example.com
+```
+
 ### cert:renew
 
-Renew certificates that are within the renewal window. By default, processes every identity in `coyotecert.identities`.
+Renew certificates that are due. By default, processes every identity in `coyotecert.identities`, and issues certificates that don't exist yet.
 
 ```bash
 php artisan cert:renew
@@ -193,10 +225,18 @@ php artisan cert:renew
 
 ```
 Renewed: example.com
-Renewed: www.example.com
+Issued: api.example.com
+Skipped: www.example.com (61 days remaining)
 ```
 
-Renew a single identity without touching the config:
+A certificate is due when:
+
+- the CA's [ARI](https://datatracker.ietf.org/doc/rfc9773/) renewal window has opened (Let's Encrypt and most other CAs publish one), or
+- the CA has no ARI and a third of the certificate's lifetime remains (30 days for a 90-day certificate), or
+- `renewal_days` is set and that many days or fewer remain, or
+- it has expired, can't be read, or no longer covers every name configured for it. Add a name to an entry in `coyotecert.identities` and the next run renews it.
+
+Renew a single identity. A configured entry with that primary name is renewed with all its names; otherwise the names on the stored certificate are kept:
 
 ```bash
 php artisan cert:renew --identity=example.com
@@ -271,15 +311,16 @@ php artisan cert:revoke example.com --reason=1  # keyCompromise
 
 ## Events
 
-Three events are dispatched through the Laravel event bus, so you can react to certificate changes with standard Laravel listeners.
+Four events are dispatched through the Laravel event bus, so you can react to certificate changes with standard Laravel listeners.
 
 | Event | When |
 |---|---|
 | `CertificateIssued` | After any successful issuance |
 | `CertificateRenewed` | After a certificate is replaced (fires alongside `CertificateIssued`) |
-| `CertificateExpiring` | When `cert:renew` detects a cert is within the renewal window, before it renews |
+| `CertificateExpiring` | When `cert:renew` finds an existing certificate due for renewal, before it renews |
+| `CertificateFailed` | When `cert:issue`, `cert:renew` or `IssueCertificateJob` fails |
 
-All three carry a `StoredCertificate $certificate` and a `string $identity`. `CertificateExpiring` also carries `int $daysUntilExpiry`.
+`CertificateIssued`, `CertificateRenewed` and `CertificateExpiring` carry a `StoredCertificate $certificate` and a `string $identity` (the lower-cased primary name). `CertificateExpiring` also carries `int $daysUntilExpiry`. `CertificateFailed` carries `string $identity` and `Throwable $exception`.
 
 ### Reloading nginx after issuance
 
@@ -330,7 +371,7 @@ class SendExpiryAlert
 
 ### Queued listeners
 
-All three events work with queued listeners out of the box because they carry a `StoredCertificate`, which is a plain readonly class that serialises cleanly.
+The certificate events work with queued listeners out of the box because they carry a `StoredCertificate`, which is a plain readonly class that serialises cleanly.
 
 ```php
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -358,30 +399,35 @@ For DNS-01 challenges, or any case where you want issuance to happen off the mai
 ```php
 use CoyoteCert\Laravel\Jobs\IssueCertificateJob;
 
-// Issue or renew with the default 30-day renewal window.
+// Issue, or renew when due (same rules as cert:renew).
 IssueCertificateJob::dispatch('example.com');
 
-// Override the renewal window.
+// A SAN certificate.
+IssueCertificateJob::dispatch(['example.com', 'www.example.com']);
+
+// Also renew whenever 14 days or fewer remain (overrides renewal_days).
 IssueCertificateJob::dispatch('example.com', renewalDays: 14);
 ```
 
-The job calls `issueOrRenew()` on the manager. If the certificate does not need renewal it exits immediately. If it does, it issues and fires the events.
+The job calls `issueOrRenew()` on the manager. If the certificate does not need renewal it exits immediately. If it does, it issues and fires the events. When the job has used up its attempts, `CertificateFailed` is dispatched.
 
 ---
 
 ## Scheduled renewal
 
-The service provider registers a daily `cert:renew` in Laravel's scheduler automatically. You do not need to add anything to `routes/console.php` or `app/Console/Kernel.php`. As long as your app has the standard scheduler cron entry (`* * * * * php artisan schedule:run >> /dev/null 2>&1`), renewals happen on their own.
+The service provider registers a daily `cert:renew` in Laravel's scheduler automatically, with `withoutOverlapping()` and `onOneServer()` so several app servers don't renew the same certificate at once. You do not need to add anything to `routes/console.php` or `app/Console/Kernel.php`. As long as your app has the standard scheduler cron entry (`* * * * * php artisan schedule:run >> /dev/null 2>&1`), renewals happen on their own.
 
 Identities are read from `coyotecert.identities` in your config. Add every identity you want to auto-renew:
 
 ```php
 'identities' => [
     'example.com',
-    'www.example.com',
+    ['shop.example.com', 'www.shop.example.com'],  // one SAN certificate
     'api.example.com',
 ],
 ```
+
+Set `COYOTECERT_SCHEDULE=false` to schedule `cert:renew` yourself.
 
 ---
 
@@ -389,7 +435,7 @@ Identities are read from `coyotecert.identities` in your config. Add every ident
 
 ### Database (default)
 
-Stores the ACME account key and all certificates in a `coyote_cert_storage` table. Works with any database Laravel supports. Run the migration once:
+Stores the ACME account key and all certificates in a `coyote_cert_storage` table, through Laravel's query builder. Works with any database Laravel supports, honours the connection's table prefix, and reconnects when a long-running worker's connection has dropped. Run the migration once (it uses the connection and table configured below):
 
 ```bash
 php artisan vendor:publish --tag=coyotecert-migrations
@@ -419,25 +465,45 @@ Set `COYOTECERT_PROVIDER` to one of these:
 
 | Value | CA | Notes |
 |---|---|---|
-| `letsencrypt` | Let's Encrypt (production) | Default. No extra config. |
+| `letsencrypt` | Let's Encrypt (production) | No extra config. |
 | `letsencrypt-staging` | Let's Encrypt (staging) | For testing. Issues untrusted certs. |
-| `buypass` | Buypass Go SSL (production) | No extra config. |
-| `buypass-staging` | Buypass Go SSL (staging) | For testing. |
 | `zerossl` | ZeroSSL | Requires `COYOTECERT_ZEROSSL_API_KEY`. |
 | `google` | Google Trust Services | Requires `COYOTECERT_GOOGLE_EAB_KID` and `COYOTECERT_GOOGLE_EAB_HMAC`. |
-| `custom` | Any RFC 8555 CA | Requires `COYOTECERT_CUSTOM_DIRECTORY_URL`. |
+| `sslcom` | SSL.com | EAB credentials optional. `COYOTECERT_SSLCOM_ECC=true` for the ECC directory. |
+| `custom` | Any RFC 8555 CA | Requires `COYOTECERT_CUSTOM_DIRECTORY_URL`; EAB credentials optional. |
+
+Buypass ended its ACME service in April 2026; `buypass` and `buypass-staging` are no longer supported.
 
 ---
 
 ## DNS-01 challenge
 
-DNS-01 is not wired by default because it requires a DNS provider API, which varies per setup. You implement `ChallengeHandlerInterface` and bind it yourself:
+DNS-01 needs API access to your DNS provider, so you bind the handler yourself. It is required for wildcard certificates. CoyoteCert ships handlers for Cloudflare, DigitalOcean, Hetzner (Cloud API), AWS Route 53, ClouDNS, and arbitrary shell commands. Bind one in a service provider:
+
+```php
+use CoyoteCert\Challenge\Dns\CloudflareDns01Handler;
+use CoyoteCert\Interfaces\ChallengeHandlerInterface;
+
+$this->app->bind(ChallengeHandlerInterface::class, fn () => new CloudflareDns01Handler(
+    apiToken: config('services.cloudflare.token'),
+));
+```
+
+Then set `COYOTECERT_CHALLENGE=dns-01` in your `.env`. The manager resolves the binding whenever it builds a certificate request.
+
+```php
+'identities' => [
+    ['example.com', '*.example.com'],
+],
+```
+
+For any other DNS provider, implement `ChallengeHandlerInterface` (or extend `CoyoteCert\Challenge\Dns\AbstractDns01Handler`, which waits for the record to propagate):
 
 ```php
 use CoyoteCert\Enums\AuthorizationChallengeEnum;
 use CoyoteCert\Interfaces\ChallengeHandlerInterface;
 
-class CloudflareDnsHandler implements ChallengeHandlerInterface
+class MyDnsHandler implements ChallengeHandlerInterface
 {
     public function supports(AuthorizationChallengeEnum $type): bool
     {
@@ -446,27 +512,15 @@ class CloudflareDnsHandler implements ChallengeHandlerInterface
 
     public function deploy(string $domain, string $token, string $keyAuthorization): void
     {
-        // Create a _acme-challenge TXT record via the Cloudflare API.
-        Cloudflare::dns()->createTxtRecord('_acme-challenge.' . $domain, $keyAuthorization);
+        // Create the _acme-challenge TXT record for $domain with the value $keyAuthorization.
     }
 
     public function cleanup(string $domain, string $token): void
     {
         // Delete the TXT record once the challenge is complete.
-        Cloudflare::dns()->deleteTxtRecord('_acme-challenge.' . $domain);
     }
 }
 ```
-
-Bind it in a service provider:
-
-```php
-use CoyoteCert\Interfaces\ChallengeHandlerInterface;
-
-$this->app->bind(ChallengeHandlerInterface::class, CloudflareDnsHandler::class);
-```
-
-Then set `COYOTECERT_CHALLENGE=dns-01` in your `.env`. The manager resolves the binding automatically.
 
 ---
 

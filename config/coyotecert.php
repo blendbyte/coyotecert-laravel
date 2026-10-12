@@ -13,10 +13,9 @@ return [
     | Supported values:
     |   letsencrypt          — Let's Encrypt (production)
     |   letsencrypt-staging  — Let's Encrypt staging (for testing; untrusted certs)
-    |   buypass              — Buypass Go SSL (production)
-    |   buypass-staging      — Buypass Go SSL staging
     |   zerossl              — ZeroSSL (requires api_key below)
     |   google               — Google Trust Services (requires eab_kid + eab_hmac below)
+    |   sslcom               — SSL.com (EAB credentials below are optional)
     |   custom               — Any ACME v2 CA (requires directory_url below)
     |
     */
@@ -28,8 +27,8 @@ return [
     | Account Email
     |--------------------------------------------------------------------------
     |
-    | Email address used to register your ACME account with the CA. The CA
-    | will send expiry notices and important account alerts to this address.
+    | Email address registered as the contact on your ACME account. The CA
+    | sends important account notices to this address.
     |
     */
 
@@ -46,9 +45,10 @@ return [
     |   http-01  — Serves a token over HTTP via Laravel's cache and a built-in
     |              route at /.well-known/acme-challenge/{token}. Works out of
     |              the box with no extra infrastructure.
-    |   dns-01   — Requires a custom ChallengeHandlerInterface implementation
-    |              bound in the service container. Use this when HTTP access is
-    |              not possible (e.g. internal servers, wildcard certificates).
+    |   dns-01   — Uses the ChallengeHandlerInterface implementation bound in
+    |              the service container (e.g. one of CoyoteCert's built-in DNS
+    |              handlers). Required for wildcard certificates, and useful when
+    |              HTTP access is not possible (e.g. internal servers).
     |
     */
 
@@ -93,14 +93,44 @@ return [
     | Renewal Window (days)
     |--------------------------------------------------------------------------
     |
-    | How many days before expiry the renewal job and cert:renew command will
-    | attempt to renew a certificate. Let's Encrypt certificates are valid for
-    | 90 days; a window of 30 days is recommended so there is ample time to
-    | retry if the first renewal attempt fails.
+    | Leave empty (recommended) to let CoyoteCert decide when to renew: inside
+    | the renewal window the CA publishes via ARI, or, for CAs without ARI,
+    | once a third of the certificate's lifetime remains (30 days for a 90-day
+    | certificate, 2 for a 6-day one).
+    |
+    | Set a number of days to also renew whenever that many days or fewer
+    | remain, in addition to the CA's ARI window.
     |
     */
 
-    'renewal_days' => (int) env('COYOTECERT_RENEWAL_DAYS', 30),
+    'renewal_days' => env('COYOTECERT_RENEWAL_DAYS'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Certificate Profile
+    |--------------------------------------------------------------------------
+    |
+    | An ACME profile to request (draft-ietf-acme-profiles), such as Let's
+    | Encrypt's "classic", "tlsserver" or "shortlived". Leave empty for the
+    | CA's default. A profile the CA doesn't list makes issuance fail.
+    |
+    */
+
+    'profile' => env('COYOTECERT_PROFILE'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Preferred Chain
+    |--------------------------------------------------------------------------
+    |
+    | Common Name of the root you want the certificate chain to end at, when
+    | the CA offers alternate chains (like certbot's --preferred-chain). It
+    | must match the issuer of the chain's topmost certificate exactly
+    | (case-insensitive), e.g. "ISRG Root X1". Leave empty for the default.
+    |
+    */
+
+    'preferred_chain' => env('COYOTECERT_PREFERRED_CHAIN'),
 
     /*
     |--------------------------------------------------------------------------
@@ -108,7 +138,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | When enabled, CoyoteCert registers a daily `cert:renew` command in
-    | Laravel's scheduler automatically. Set to false if you want to manage
+    | Laravel's scheduler automatically (on one server, without overlapping). Set to false if you want to manage
     | the schedule yourself (e.g. to change the frequency or add before/after
     | hooks).
     |
@@ -128,6 +158,8 @@ return [
     | An array entry issues one SAN certificate covering all listed domains.
     | The first domain in an array is the primary identity used as the storage
     | key and is what you pass to cert:status, cert:revoke, and --identity.
+    | Names are lower-cased. Adding a name to an entry renews its certificate
+    | on the next cert:renew run. Wildcards (*.example.com) need dns-01.
     |
     | Examples:
     |   'example.com'                          → single-domain cert
@@ -160,9 +192,20 @@ return [
             'eab_hmac' => env('COYOTECERT_GOOGLE_EAB_HMAC'),
         ],
 
-        // Custom ACME v2 CA — full URL to the ACME directory endpoint
+        // SSL.com — EAB credentials are optional. `ecc` selects the ECC
+        // directory instead of the RSA one.
+        'sslcom' => [
+            'eab_kid'  => env('COYOTECERT_SSLCOM_EAB_KID'),
+            'eab_hmac' => env('COYOTECERT_SSLCOM_EAB_HMAC'),
+            'ecc'      => (bool) env('COYOTECERT_SSLCOM_ECC', false),
+        ],
+
+        // Custom ACME v2 CA — full URL to the ACME directory endpoint, plus
+        // EAB credentials if the CA requires them
         'custom' => [
             'directory_url' => env('COYOTECERT_CUSTOM_DIRECTORY_URL'),
+            'eab_kid'       => env('COYOTECERT_CUSTOM_EAB_KID'),
+            'eab_hmac'      => env('COYOTECERT_CUSTOM_EAB_HMAC'),
         ],
 
     ],
@@ -196,7 +239,8 @@ return [
         // Laravel database connection name. Defaults to the application default.
         'connection' => env('COYOTECERT_DB_CONNECTION'),
 
-        // Table name. Must contain only [a-zA-Z0-9_] characters.
+        // Table name (the connection's table prefix is applied). The migration
+        // reads this and the connection above.
         'table' => env('COYOTECERT_DB_TABLE', 'coyote_cert_storage'),
     ],
 

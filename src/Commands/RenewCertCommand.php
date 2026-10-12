@@ -4,34 +4,39 @@ declare(strict_types=1);
 
 namespace CoyoteCert\Laravel\Commands;
 
+use CoyoteCert\Enums\KeyType;
+use CoyoteCert\Exceptions\StorageException;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Laravel\Events\CertificateExpiring;
 use CoyoteCert\Laravel\Events\CertificateFailed;
+use CoyoteCert\Storage\StorageInterface;
+use CoyoteCert\Storage\StoredCertificate;
 use Illuminate\Console\Command;
 use Throwable;
 
 final class RenewCertCommand extends Command
 {
-    protected $signature = 'cert:renew {--identity=} {--force}';
+    protected $signature = 'cert:renew {--identity= : Renew only this identity (the primary name of a configured entry)} {--force : Re-issue even when renewal is not due}';
 
     protected $description = 'Renew TLS certificates for configured identities';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        $identityOption = $this->input->getOption('identity');
-        $force          = (bool) $this->input->getOption('force');
-        $renewalDays    = (int) config('coyotecert.renewal_days', 30);
-        $keyType        = $manager->resolveKeyType();
+        $identityOption = $this->option('identity');
+        $force          = (bool) $this->option('force');
 
-        /** @var list<list<string>> $entries */
-        $entries = $identityOption !== null
-            ? [[(string) $identityOption]]
-            : array_values(array_map(
-                static fn(mixed $e): array => is_array($e)
-                    ? array_values(array_map('strval', $e))
-                    : [(string) $e],
-                (array) config('coyotecert.identities', []),
-            ));
+        try {
+            $renewalDays = $manager->renewalDays();
+            $keyType     = $manager->resolveKeyType();
+            $storage     = $manager->storage();
+            $entries     = is_string($identityOption)
+                ? [$this->entryFor($manager, $storage, $keyType, $identityOption)]
+                : $manager->configuredIdentities();
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+
+            return Command::FAILURE;
+        }
 
         if ($entries === []) {
             $this->warn('No identities configured. Add identities to coyotecert.identities or pass --identity.');
@@ -41,33 +46,29 @@ final class RenewCertCommand extends Command
 
         $anyFailed = false;
 
-        foreach ($entries as $entry) {
-            $primary = $entry[0];
+        foreach ($entries as $identities) {
+            $primary = $identities[0];
 
             try {
-                // Always fetch existing cert — needed to preserve SANs on renewal
-                $existing = $manager->storage()->getCertificate($primary, $keyType);
+                $cert     = $manager->for($identities);
+                $existing = $this->stored($storage, $primary, $keyType);
 
-                if (!$force && $existing !== null) {
-                    if ($existing->expiresWithin($renewalDays)) {
-                        event(new CertificateExpiring($existing, $primary, $existing->daysUntilExpiry()));
-                    } else {
-                        $this->line("Skipped: {$primary} ({$existing->daysUntilExpiry()} days remaining)");
+                if (!$force) {
+                    if (!$cert->needsRenewal($renewalDays)) {
+                        $days = $existing !== null ? " ({$existing->daysUntilExpiry()} days remaining)" : '';
+                        $this->line("Skipped: {$primary}{$days}");
+
                         continue;
+                    }
+
+                    if ($existing !== null) {
+                        event(new CertificateExpiring($existing, $primary, $existing->daysUntilExpiry()));
                     }
                 }
 
-                // Prefer stored domains to preserve SANs on renewal; fall back to config entry
-                $domains     = $existing !== null ? $existing->domains : $entry;
-                $identifiers = count($domains) === 1 ? $domains[0] : $domains;
+                $cert->issue();
 
-                if ($force) {
-                    $manager->for($identifiers)->issue();
-                } else {
-                    $manager->for($identifiers)->issueOrRenew($renewalDays);
-                }
-
-                $this->info("Renewed: {$primary}");
+                $this->info(($existing !== null ? 'Renewed: ' : 'Issued: ') . $primary);
             } catch (Throwable $e) {
                 $this->error("Failed [{$primary}]: " . $e->getMessage());
                 event(new CertificateFailed($primary, $e));
@@ -76,5 +77,39 @@ final class RenewCertCommand extends Command
         }
 
         return $anyFailed ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * The identities to renew for --identity: the configured entry with that primary name, else
+     * the names on the stored certificate (so SANs survive), else just the identity itself.
+     *
+     * @return non-empty-list<string>
+     */
+    private function entryFor(CoyoteCertManager $manager, StorageInterface $storage, KeyType $keyType, string $identity): array
+    {
+        $primary = CoyoteCertManager::normalizeIdentities($identity)[0]
+            ?? throw new \InvalidArgumentException('The --identity option needs a value.');
+
+        foreach ($manager->configuredIdentities() as $identities) {
+            if ($identities[0] === $primary) {
+                return $identities;
+            }
+        }
+
+        $stored = CoyoteCertManager::normalizeIdentities($this->stored($storage, $primary, $keyType)->domains ?? []);
+
+        return $stored !== [] && $stored[0] === $primary ? $stored : [$primary];
+    }
+
+    /** A record that can't be read counts as missing, as it does for CoyoteCert, which replaces it. */
+    private function stored(StorageInterface $storage, string $primary, KeyType $keyType): ?StoredCertificate
+    {
+        try {
+            return $storage->getCertificate($primary, $keyType);
+        } catch (StorageException $e) {
+            $this->warn("Could not read the stored certificate for [{$primary}]: " . $e->getMessage());
+
+            return null;
+        }
     }
 }

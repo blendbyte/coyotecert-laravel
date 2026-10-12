@@ -6,169 +6,223 @@ namespace Tests\Feature\Commands;
 
 use CoyoteCert\CoyoteCert;
 use CoyoteCert\Enums\KeyType;
+use CoyoteCert\Exceptions\StorageException;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Laravel\Events\CertificateExpiring;
 use CoyoteCert\Laravel\Events\CertificateFailed;
 use CoyoteCert\Storage\StorageInterface;
 use CoyoteCert\Storage\StoredCertificate;
-use DateTimeImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Event;
+use InvalidArgumentException;
 use Mockery;
 use Mockery\MockInterface;
 
-it('renews all configured identities and reports success', function (): void {
-    config(['coyotecert.identities' => ['example.com', 'www.example.com']]);
-
-    $cert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->twice()->andReturn($cert);
-
+/**
+ * @param list<non-empty-list<string>> $configured
+ * @param array<string, StoredCertificate|\Throwable|null> $stored keyed by primary identity
+ *
+ * @return MockInterface&CoyoteCertManager
+ */
+function renewManager(array $configured = [], array $stored = [], ?int $renewalDays = null): MockInterface
+{
     /** @var MockInterface&StorageInterface $storage */
     $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')->andReturn(null);
+    $storage->shouldReceive('getCertificate')->andReturnUsing(
+        static function (string $primary, KeyType $keyType) use ($stored): ?StoredCertificate {
+            $value = $stored[$primary] ?? null;
+
+            if ($value instanceof \Throwable) {
+                throw $value;
+            }
+
+            return $value;
+        },
+    );
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('renewalDays')->andReturn($renewalDays);
     $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->andReturn($coyoteCert);
+    $manager->shouldReceive('configuredIdentities')->andReturn($configured);
 
-    $this->instance(CoyoteCertManager::class, $manager);
+    test()->instance(CoyoteCertManager::class, $manager);
+
+    return $manager;
+}
+
+/** @return MockInterface&CoyoteCert */
+function renewBuilder(bool $needsRenewal = true): MockInterface
+{
+    /** @var MockInterface&CoyoteCert $cert */
+    $cert = Mockery::mock(CoyoteCert::class);
+    $cert->shouldReceive('needsRenewal')->andReturn($needsRenewal);
+
+    return $cert;
+}
+
+it('issues certificates that do not exist yet for every configured identity', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->twice()->andReturn(fakeCertificate());
+
+    $manager = renewManager([['example.com'], ['api.example.com']]);
+    $manager->shouldReceive('for')->with(['example.com'])->once()->andReturn($builder);
+    $manager->shouldReceive('for')->with(['api.example.com'])->once()->andReturn($builder);
 
     $this->artisan('cert:renew')
         ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('Renewed: example.com')
-        ->expectsOutputToContain('Renewed: www.example.com');
+        ->expectsOutputToContain('Issued: example.com')
+        ->expectsOutputToContain('Issued: api.example.com');
 });
 
-it('renews a single identity when --identity is given', function (): void {
-    $cert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
+it('renews a due certificate and dispatches CertificateExpiring first', function (): void {
+    Event::fake([CertificateExpiring::class]);
+
+    $existing = fakeCertificate(expiresAt: '+20 days', issuedAt: '-70 days');
+    $builder  = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
+
+    renewManager([['example.com']], ['example.com' => $existing])
+        ->shouldReceive('for')->with(['example.com'])->andReturn($builder);
+
+    $this->artisan('cert:renew')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Renewed: example.com');
+
+    Event::assertDispatched(
+        CertificateExpiring::class,
+        fn(CertificateExpiring $e) => $e->identity === 'example.com' && $e->daysUntilExpiry === 20 && $e->certificate === $existing,
     );
+});
 
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->once()->andReturn($cert);
+it('skips a certificate that CoyoteCert says is not due', function (): void {
+    Event::fake([CertificateExpiring::class]);
 
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn(null);
+    $builder = renewBuilder(needsRenewal: false);
+    $builder->shouldNotReceive('issue');
 
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
+    renewManager([['example.com']], ['example.com' => fakeCertificate(expiresAt: '+60 days')])
+        ->shouldReceive('for')->andReturn($builder);
 
-    $this->instance(CoyoteCertManager::class, $manager);
+    $this->artisan('cert:renew')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Skipped: example.com (60 days remaining)');
 
-    $this->artisan('cert:renew', ['--identity' => 'example.com'])
+    Event::assertNotDispatched(CertificateExpiring::class);
+});
+
+it('passes the configured renewal threshold to needsRenewal()', function (): void {
+    /** @var MockInterface&CoyoteCert $builder */
+    $builder = Mockery::mock(CoyoteCert::class);
+    $builder->shouldReceive('needsRenewal')->once()->with(14)->andReturn(false);
+
+    renewManager([['example.com']], renewalDays: 14)->shouldReceive('for')->andReturn($builder);
+
+    $this->artisan('cert:renew')->assertExitCode(Command::SUCCESS)->expectsOutputToContain('Skipped: example.com');
+});
+
+it('re-issues without asking needsRenewal() when --force is given', function (): void {
+    Event::fake([CertificateExpiring::class]);
+
+    /** @var MockInterface&CoyoteCert $builder */
+    $builder = Mockery::mock(CoyoteCert::class);
+    $builder->shouldNotReceive('needsRenewal');
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
+
+    renewManager([['example.com']], ['example.com' => fakeCertificate()])
+        ->shouldReceive('for')->andReturn($builder);
+
+    $this->artisan('cert:renew', ['--force' => true])
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Renewed: example.com');
+
+    Event::assertNotDispatched(CertificateExpiring::class);
+});
+
+it('uses the configured SAN entry for --identity', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
+
+    renewManager(
+        [['other.example.com'], ['example.com', 'www.example.com']],
+        ['example.com' => fakeCertificate(['example.com'])],
+    )->shouldReceive('for')->once()->with(['example.com', 'www.example.com'])->andReturn($builder);
+
+    $this->artisan('cert:renew', ['--identity' => 'Example.com'])
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('Renewed: example.com');
 });
 
-it('calls issue() instead of issueOrRenew() when --force is given', function (): void {
-    $cert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
+it('uses the stored names for an --identity that is not configured', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
 
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issue')->once()->andReturn($cert);
-    $coyoteCert->shouldNotReceive('issueOrRenew');
+    renewManager([], ['example.com' => fakeCertificate(['example.com', 'www.example.com'])])
+        ->shouldReceive('for')->once()->with(['example.com', 'www.example.com'])->andReturn($builder);
 
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn(null);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->with('example.com')->andReturn($coyoteCert);
-
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    $this->artisan('cert:renew', ['--identity' => 'example.com', '--force' => true])
-        ->assertExitCode(Command::SUCCESS);
+    $this->artisan('cert:renew', ['--identity' => 'example.com'])->assertExitCode(Command::SUCCESS);
 });
 
-it('returns failure when an identity renewal throws', function (): void {
-    config(['coyotecert.identities' => ['example.com']]);
+it('uses just the --identity when nothing is configured or stored for it', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
 
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->once()->andThrow(new \RuntimeException('ACME error'));
+    renewManager()->shouldReceive('for')->once()->with(['example.com'])->andReturn($builder);
 
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')->andReturn(null);
+    $this->artisan('cert:renew', ['--identity' => 'example.com'])
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Issued: example.com');
+});
 
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->andReturn($coyoteCert);
+it('ignores stored names whose primary does not match the --identity', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
 
-    $this->instance(CoyoteCertManager::class, $manager);
+    renewManager([], ['example.com' => fakeCertificate(['www.example.com', 'example.com'])])
+        ->shouldReceive('for')->once()->with(['example.com'])->andReturn($builder);
+
+    $this->artisan('cert:renew', ['--identity' => 'example.com'])->assertExitCode(Command::SUCCESS);
+});
+
+it('fails when --identity is empty', function (): void {
+    renewManager();
+
+    $this->artisan('cert:renew', ['--identity' => ' '])
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('The --identity option needs a value.');
+});
+
+it('treats an unreadable stored certificate as missing', function (): void {
+    $builder = renewBuilder();
+    $builder->shouldReceive('issue')->once()->andReturn(fakeCertificate());
+
+    renewManager([['example.com']], ['example.com' => new StorageException('bad json')])
+        ->shouldReceive('for')->andReturn($builder);
+
+    $this->artisan('cert:renew')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Could not read the stored certificate for [example.com]: bad json')
+        ->expectsOutputToContain('Issued: example.com');
+});
+
+it('continues after a failure, dispatches CertificateFailed and returns failure', function (): void {
+    Event::fake([CertificateFailed::class]);
+
+    $failing = renewBuilder();
+    $failing->shouldReceive('issue')->once()->andThrow(new \RuntimeException('ACME error'));
+
+    $working = renewBuilder();
+    $working->shouldReceive('issue')->once()->andReturn(fakeCertificate());
+
+    $manager = renewManager([['example.com'], ['api.example.com']]);
+    $manager->shouldReceive('for')->with(['example.com'])->andReturn($failing);
+    $manager->shouldReceive('for')->with(['api.example.com'])->andReturn($working);
 
     $this->artisan('cert:renew')
         ->assertExitCode(Command::FAILURE)
-        ->expectsOutputToContain('Failed [example.com]');
-});
-
-it('dispatches CertificateFailed when renewal throws', function (): void {
-    config(['coyotecert.identities' => ['example.com']]);
-
-    Event::fake([CertificateFailed::class]);
-
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->once()->andThrow(new \RuntimeException('ACME error'));
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')->andReturn(null);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->andReturn($coyoteCert);
-
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    $this->artisan('cert:renew')->assertExitCode(Command::FAILURE);
+        ->expectsOutputToContain('Failed [example.com]: ACME error')
+        ->expectsOutputToContain('Issued: api.example.com');
 
     Event::assertDispatched(
         CertificateFailed::class,
@@ -176,189 +230,20 @@ it('dispatches CertificateFailed when renewal throws', function (): void {
     );
 });
 
-it('dispatches CertificateExpiring when the cert is within the renewal window', function (): void {
-    config(['coyotecert.identities' => ['example.com'], 'coyotecert.renewal_days' => 30]);
-
-    $expiringSoon = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable('-60 days'),
-        expiresAt: new DateTimeImmutable('+20 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    $renewed = new StoredCertificate(
-        certificate: '---new-cert---',
-        privateKey: '---new-key---',
-        fullchain: '---new-fullchain---',
-        caBundle: '---new-ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->once()->andReturn($renewed);
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($expiringSoon);
-
+it('fails cleanly on invalid configuration', function (): void {
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->andReturn($coyoteCert);
-
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    Event::fake([CertificateExpiring::class]);
-
-    $this->artisan('cert:renew')->assertExitCode(Command::SUCCESS);
-
-    Event::assertDispatched(
-        CertificateExpiring::class,
-        fn(CertificateExpiring $e) => $e->identity === 'example.com' && $e->daysUntilExpiry <= 30,
-    );
-});
-
-it('skips an identity whose certificate is not within the renewal window', function (): void {
-    config(['coyotecert.identities' => ['example.com'], 'coyotecert.renewal_days' => 30]);
-
-    $freshCert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+60 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($freshCert);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldNotReceive('for');
+    $manager->shouldReceive('renewalDays')->andThrow(new InvalidArgumentException('Invalid renewal window [x].'));
 
     $this->instance(CoyoteCertManager::class, $manager);
 
     $this->artisan('cert:renew')
-        ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('Skipped: example.com');
-});
-
-it('renews a SAN cert using stored domains from the existing certificate', function (): void {
-    config(['coyotecert.identities' => [['example.com', 'www.example.com']], 'coyotecert.renewal_days' => 30]);
-
-    $existing = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable('-60 days'),
-        expiresAt: new DateTimeImmutable('+20 days'),
-        domains: ['example.com', 'www.example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    $renewed = new StoredCertificate(
-        certificate: '---new-cert---',
-        privateKey: '---new-key---',
-        fullchain: '---new-fullchain---',
-        caBundle: '---new-ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com', 'www.example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issueOrRenew')->once()->andReturn($renewed);
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($existing);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
-
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    $this->artisan('cert:renew')
-        ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('Renewed: example.com');
-});
-
-it('uses stored domains when --force is given and an existing certificate is found', function (): void {
-    $existing = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable('-60 days'),
-        expiresAt: new DateTimeImmutable('+30 days'),
-        domains: ['example.com', 'www.example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    $renewed = new StoredCertificate(
-        certificate: '---new-cert---',
-        privateKey: '---new-key---',
-        fullchain: '---new-fullchain---',
-        caBundle: '---new-ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com', 'www.example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&CoyoteCert $coyoteCert */
-    $coyoteCert = Mockery::mock(CoyoteCert::class);
-    $coyoteCert->shouldReceive('issue')->once()->andReturn($renewed);
-    $coyoteCert->shouldNotReceive('issueOrRenew');
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($existing);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-    $manager->shouldReceive('for')->with(['example.com', 'www.example.com'])->andReturn($coyoteCert);
-
-    $this->instance(CoyoteCertManager::class, $manager);
-
-    $this->artisan('cert:renew', ['--identity' => 'example.com', '--force' => true])
-        ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('Renewed: example.com');
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('Invalid renewal window [x].');
 });
 
 it('warns and returns success when no identities are configured', function (): void {
-    config(['coyotecert.identities' => []]);
+    renewManager();
 
     $this->artisan('cert:renew')
         ->assertExitCode(Command::SUCCESS)

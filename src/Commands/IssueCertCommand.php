@@ -11,22 +11,20 @@ use Throwable;
 
 final class IssueCertCommand extends Command
 {
-    protected $signature = 'cert:issue {identity*}';
+    protected $signature = 'cert:issue {identity* : One or more names; the first is the primary name the certificate is stored under}';
 
     protected $description = 'Issue a new TLS certificate (pass multiple identities for a SAN cert)';
 
     public function handle(CoyoteCertManager $manager): int
     {
-        /** @var non-empty-list<string> $identities */
-        $identities  = array_values(array_map('strval', (array) $this->argument('identity')));
-        $label       = implode(', ', $identities);
-        $identifiers = count($identities) === 1 ? $identities[0] : $identities;
+        $identities = CoyoteCertManager::normalizeIdentities((array) $this->argument('identity'));
+        $label      = implode(', ', $identities);
 
         try {
-            $cert = $manager->for($identifiers)->issue();
+            $cert = $manager->for($identities)->issue();
         } catch (Throwable $e) {
             $this->error("Failed to issue certificate for [{$label}]: " . $e->getMessage());
-            event(new CertificateFailed($identities[0], $e));
+            event(new CertificateFailed($identities[0] ?? $label, $e));
 
             return Command::FAILURE;
         }

@@ -5,40 +5,40 @@ declare(strict_types=1);
 namespace Tests\Feature\Commands;
 
 use CoyoteCert\Enums\KeyType;
+use CoyoteCert\Exceptions\StorageException;
 use CoyoteCert\Laravel\CoyoteCertManager;
 use CoyoteCert\Storage\StorageInterface;
 use CoyoteCert\Storage\StoredCertificate;
-use DateTimeImmutable;
 use Illuminate\Console\Command;
+use InvalidArgumentException;
 use Mockery;
 use Mockery\MockInterface;
 
-it('lists an identity with an active certificate', function (): void {
-    config(['coyotecert.identities' => ['example.com']]);
-
-    $cert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
+/**
+ * @param list<non-empty-list<string>> $configured
+ * @param array<string, StoredCertificate|\Throwable|null> $stored
+ */
+function listManager(array $configured, array $stored = []): void
+{
     /** @var MockInterface&StorageInterface $storage */
     $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($cert);
+
+    foreach ($stored as $primary => $value) {
+        $expectation = $storage->shouldReceive('getCertificate')->with($primary, KeyType::EC_P256);
+        $value instanceof \Throwable ? $expectation->andThrow($value) : $expectation->andReturn($value);
+    }
 
     /** @var MockInterface&CoyoteCertManager $manager */
     $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('configuredIdentities')->andReturn($configured);
     $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
     $manager->shouldReceive('storage')->andReturn($storage);
 
-    $this->instance(CoyoteCertManager::class, $manager);
+    test()->instance(CoyoteCertManager::class, $manager);
+}
+
+it('lists an identity with an active certificate', function (): void {
+    listManager([['example.com']], ['example.com' => fakeCertificate()]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
@@ -46,52 +46,15 @@ it('lists an identity with an active certificate', function (): void {
 });
 
 it('lists an identity that has no certificate yet', function (): void {
-    config(['coyotecert.identities' => ['example.com']]);
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn(null);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-
-    $this->instance(CoyoteCertManager::class, $manager);
+    listManager([['example.com']], ['example.com' => null]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
-        ->expectsOutputToContain('example.com');
+        ->expectsOutputToContain('Not issued');
 });
 
 it('shows expired status for an expired certificate', function (): void {
-    config(['coyotecert.identities' => ['example.com']]);
-
-    $expiredCert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable('-120 days'),
-        expiresAt: new DateTimeImmutable('-30 days'),
-        domains: ['example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($expiredCert);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-
-    $this->instance(CoyoteCertManager::class, $manager);
+    listManager([['example.com']], ['example.com' => fakeCertificate(expiresAt: '-30 days', issuedAt: '-120 days')]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
@@ -99,39 +62,39 @@ it('shows expired status for an expired certificate', function (): void {
 });
 
 it('lists a SAN identity group from config', function (): void {
-    config(['coyotecert.identities' => [['example.com', 'www.example.com']]]);
-
-    $cert = new StoredCertificate(
-        certificate: '---cert---',
-        privateKey: '---key---',
-        fullchain: '---fullchain---',
-        caBundle: '---ca---',
-        issuedAt: new DateTimeImmutable(),
-        expiresAt: new DateTimeImmutable('+90 days'),
-        domains: ['example.com', 'www.example.com'],
-        keyType: KeyType::EC_P256,
-    );
-
-    /** @var MockInterface&StorageInterface $storage */
-    $storage = Mockery::mock(StorageInterface::class);
-    $storage->shouldReceive('getCertificate')
-        ->with('example.com', KeyType::EC_P256)
-        ->andReturn($cert);
-
-    /** @var MockInterface&CoyoteCertManager $manager */
-    $manager = Mockery::mock(CoyoteCertManager::class);
-    $manager->shouldReceive('resolveKeyType')->andReturn(KeyType::EC_P256);
-    $manager->shouldReceive('storage')->andReturn($storage);
-
-    $this->instance(CoyoteCertManager::class, $manager);
+    listManager([['example.com', 'www.example.com']], ['example.com' => fakeCertificate(['example.com', 'www.example.com'])]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
         ->expectsOutputToContain('example.com, www.example.com');
 });
 
+it('marks a certificate that cannot be read and keeps listing', function (): void {
+    listManager(
+        [['broken.example.com'], ['example.com']],
+        ['broken.example.com' => new StorageException('bad json'), 'example.com' => fakeCertificate()],
+    );
+
+    $this->artisan('cert:list')
+        ->assertExitCode(Command::SUCCESS)
+        ->expectsOutputToContain('Unreadable');
+});
+
+it('fails cleanly on invalid configuration', function (): void {
+    /** @var MockInterface&CoyoteCertManager $manager */
+    $manager = Mockery::mock(CoyoteCertManager::class);
+    $manager->shouldReceive('configuredIdentities')->andReturn([['example.com']]);
+    $manager->shouldReceive('resolveKeyType')->andThrow(new InvalidArgumentException('Invalid key type [X].'));
+
+    $this->instance(CoyoteCertManager::class, $manager);
+
+    $this->artisan('cert:list')
+        ->assertExitCode(Command::FAILURE)
+        ->expectsOutputToContain('Invalid key type [X].');
+});
+
 it('warns and returns success when no identities are configured', function (): void {
-    config(['coyotecert.identities' => []]);
+    listManager([]);
 
     $this->artisan('cert:list')
         ->assertExitCode(Command::SUCCESS)
